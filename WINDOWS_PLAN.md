@@ -1,1 +1,1 @@
-Windows 适配计划
+项目目标:将 AI Agent Board 改造成适用于 Windows 10 1909 的本地软件。基本要求:1. 不升级 Windows ;2. 不购买 API 或额外付费服务;3. 不增加硬件;4. 尽可能双击启动;5. 保证文件和数据安全;6. 未经用户授权,不修改真实项目;7. 每个阶段保存到 GitHub。开发阶段:M1 Windows 兼容性分析;M2 Windows 基础版本;M3 安全与费用控制;M4 Codex 和 Claude Code 接入;M5 AI 自动切换与断点恢复;M6 自动开发管理系统
