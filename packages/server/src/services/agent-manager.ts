@@ -7,7 +7,6 @@ import type { Task, TaskGroup, AgentEvent, AgentType } from '../types.js';
 import type { TaskRepository } from '../repositories/types.js';
 import type { AgentProvider, AgentSession, AgentInfo, AgentAttachment } from '@codewithdan/agent-sdk-core';
 import type { AgentEvent as CoreAgentEvent } from '@codewithdan/agent-sdk-core';
-import { CopilotProvider, ClaudeProvider, CodexProvider, OpenCodeProvider, HermesProvider, OpenClawProvider, GrokProvider } from '@codewithdan/agent-sdk-core';
 import { broadcast } from '../websocket.js';
 import {
   cleanupTaskWorktree,
@@ -18,7 +17,7 @@ import {
 import { UPLOADS_DIR } from '../routes/attachments.js';
 import type { AttachmentStore } from '../repositories/attachment-types.js';
 import { errorMessage } from '../utils.js';
-import { detectAvailableAgents } from './agent-detection.js';
+import { assertAgentExecutionEnabled, isAgentExecutionEnabled, AGENT_EXECUTION_DISABLED_REASON } from './execution-policy.js';
 import { resolveTaskTimeoutMs } from './agent-timeout.js';
 
 function loadAttachmentAsBase64(filePath: string, displayName: string, mimeType: string): AgentAttachment | null {
@@ -134,6 +133,16 @@ export class AgentManager {
 
   /** Detect available agents, register providers, start the ones that are available. */
   async initialize(): Promise<void> {
+    if (!isAgentExecutionEnabled()) {
+      this.availableAgents = this.disabledAgentCatalog();
+      console.log('[agent-manager] basic mode — agent execution disabled');
+      return;
+    }
+
+    // Load SDK implementations only after explicit execution opt-in.
+    const { CopilotProvider, ClaudeProvider, CodexProvider, OpenCodeProvider,
+      HermesProvider, OpenClawProvider, GrokProvider } = await import('@codewithdan/agent-sdk-core');
+    const { detectAvailableAgents } = await import('./agent-detection.js');
     // Register all providers
     this.providers.set('copilot', new CopilotProvider());
     this.providers.set('claude', new ClaudeProvider());
@@ -152,29 +161,6 @@ export class AgentManager {
     console.log(
       `[agent-manager] detected agents: ${this.availableAgents.map(a => `${a.displayName}=${a.available ? 'yes' : 'no'}`).join(', ')}`
     );
-
-    // In test/CI environments there are no real agent credentials, and some
-    // provider SDKs spawn a background session on start() that rejects (e.g.
-    // Copilot without GitHub auth) as a detached unhandled rejection — which
-    // would crash the server. When startup is disabled we skip booting real SDK
-    // clients. Because no provider is started, no agent can actually run, so we
-    // also report every detected agent as unavailable. This keeps the agents
-    // listed in the UI (as "Unavailable") while ensuring real-execution E2E
-    // specs skip instead of attempting sessions that would hang or fail — a CLI
-    // shim on PATH (e.g. node_modules/.bin/copilot) otherwise makes detection
-    // report an agent that cannot be used here as "available".
-    const skipAgentStartup =
-      process.env.AGENTBOARD_DISABLE_AGENT_STARTUP === '1' ||
-      process.env.AGENTBOARD_DISABLE_AGENT_STARTUP === 'true';
-    if (skipAgentStartup) {
-      console.log('[agent-manager] AGENTBOARD_DISABLE_AGENT_STARTUP set — skipping provider start()');
-      this.availableAgents = this.availableAgents.map(a => ({
-        ...a,
-        available: false,
-        reason: 'Agent startup disabled (test environment)',
-      }));
-      return;
-    }
 
     // Start available providers
     for (const info of available) {
@@ -195,7 +181,23 @@ export class AgentManager {
     }
   }
 
+  private disabledAgentCatalog(): AgentInfo[] {
+    return [
+      ['copilot', 'GitHub Copilot'], ['claude', 'Claude Code'],
+      ['codex', 'OpenAI Codex'], ['opencode', 'OpenCode'],
+      ['hermes', 'Hermes'], ['openclaw', 'OpenClaw'], ['grok', 'Grok'],
+    ].map(([name, displayName]) => ({
+      name: name as AgentType, displayName, available: false,
+      reason: AGENT_EXECUTION_DISABLED_REASON,
+    }));
+  }
+
   async refresh(): Promise<AgentInfo[]> {
+    if (!isAgentExecutionEnabled()) {
+      this.availableAgents = this.disabledAgentCatalog();
+      return this.getAvailableAgents();
+    }
+    const { detectAvailableAgents } = await import('./agent-detection.js');
     const detected = await detectAvailableAgents();
     for (const info of detected) {
       const provider = this.providers.get(info.name);
@@ -484,6 +486,7 @@ export class AgentManager {
     onStatusChange: (status: Task['agentStatus']) => void | Promise<void>,
     onWorktreeCreated?: (worktreePath: string) => void | Promise<void>,
   ): void {
+    assertAgentExecutionEnabled();
     if (this.sessions.has(task.id)) return;
 
     const agentType = task.agentType || 'copilot';
@@ -815,6 +818,7 @@ Optional list of any work you did not complete or that should be followed up. Om
   }
 
   async sendMessage(taskId: string, message: string, attachmentIds?: string[]): Promise<boolean> {
+    assertAgentExecutionEnabled();
     const entry = this.sessions.get(taskId);
     if (!entry?.session) return false;
 
@@ -936,6 +940,7 @@ Optional list of any work you did not complete or that should be followed up. Om
     makeWorktreeCb: (task: Task) => (worktreePath: string) => void | Promise<void>,
     onChildComplete: (taskId: string) => void | Promise<void>,
   ): void {
+    assertAgentExecutionEnabled();
     if (this.groupQueues.has(group.id)) return;
 
     const queue: GroupQueue = {

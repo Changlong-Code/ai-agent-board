@@ -62,45 +62,20 @@ test.describe('Single-call task creation + autoRun', () => {
     await deleteTaskViaAPI(request, task.id);
   });
 
-  test('POST /api/tasks with autoRun=true but columnId=backlog does NOT auto-run', async ({ request }) => {
-    const res = await request.post(`${API}/api/tasks`, {
-      data: {
-        title: 'No auto-run backlog',
-        description: 'Should not run because not in-progress',
-        columnId: 'backlog',
-        autoRun: true,
-      },
-    });
-    expect(res.status()).toBe(201);
-    const task = await res.json();
-    // Should still be idle since columnId is backlog
-    expect(task.agentStatus).toBe('idle');
-    expect(task.columnId).toBe('backlog');
-
-    await deleteTaskViaAPI(request, task.id);
+  test('basic mode rejects autoRun in backlog without creating a task', async ({ request }) => {
+    const before = await (await request.get(`${API}/api/tasks`)).json();
+    const res = await request.post(`${API}/api/tasks`, { data: { title: 'Blocked auto-run', columnId: 'backlog', autoRun: true } });
+    expect(res.status()).toBe(403);
+    expect((await res.json()).code).toBe('AGENT_EXECUTION_DISABLED');
+    expect(await (await request.get(`${API}/api/tasks`)).json()).toEqual(before);
   });
 
-  test('POST /api/tasks with autoRun=true and columnId=in-progress starts agent', async ({ request }) => {
-    const repoPath = prepareTestRepo('api-improvements');
-    const res = await request.post(`${API}/api/tasks`, {
-      data: {
-        title: 'Auto-run task',
-        description: 'Should auto-start the agent',
-        columnId: 'in-progress',
-        agentType: 'copilot',
-        repoPath,
-        autoRun: true,
-      },
-    });
-    expect(res.status()).toBe(201);
-    const task = await res.json();
-    // The task should have been started — agentStatus should be planning or executing
-    expect(['planning', 'executing', 'failed']).toContain(task.agentStatus);
-    expect(task.columnId).toBe('in-progress');
-
-    // Cleanup: stop agent if running, then delete
-    await request.post(`${API}/api/tasks/${task.id}/stop`);
-    await deleteTaskViaAPI(request, task.id);
+  test('basic mode rejects autoRun in in-progress without creating a task', async ({ request }) => {
+    const before = await (await request.get(`${API}/api/tasks`)).json();
+    const res = await request.post(`${API}/api/tasks`, { data: { title: 'Blocked auto-run', columnId: 'in-progress', autoRun: true } });
+    expect(res.status()).toBe(403);
+    expect((await res.json()).code).toBe('AGENT_EXECUTION_DISABLED');
+    expect(await (await request.get(`${API}/api/tasks`)).json()).toEqual(before);
   });
 
   test('POST /api/tasks with autoRun=false (default) does NOT auto-run', async ({ request }) => {
@@ -242,39 +217,14 @@ test.describe('Batch create endpoint', () => {
     expect(res.status()).toBe(400);
   });
 
-  test('POST /api/tasks/batch with autoRun creates and starts agents', async ({ request }) => {
-    const repoPath = prepareTestRepo('api-improvements');
-    const res = await request.post(`${API}/api/tasks/batch`, {
-      data: {
-        tasks: [
-          {
-            title: 'Batch autoRun',
-            columnId: 'in-progress',
-            agentType: 'copilot',
-            repoPath,
-            autoRun: true,
-          },
-          {
-            title: 'Batch no autoRun',
-            columnId: 'backlog',
-          },
-        ],
-      },
-    });
-    expect(res.status()).toBe(201);
-    const body = await res.json();
-    expect(body.tasks).toHaveLength(2);
-
-    // First task should have been auto-run (planning/executing/failed)
-    expect(['planning', 'executing', 'failed']).toContain(body.tasks[0].agentStatus);
-    // Second task should be idle (not auto-run, in backlog)
-    expect(body.tasks[1].agentStatus).toBe('idle');
-
-    // Cleanup
-    for (const t of body.tasks) {
-      await request.post(`${API}/api/tasks/${t.id}/stop`);
-      await deleteTaskViaAPI(request, t.id);
-    }
+  test('basic mode rejects a mixed autoRun batch atomically', async ({ request }) => {
+    const before = await (await request.get(`${API}/api/tasks`)).json();
+    const res = await request.post(`${API}/api/tasks/batch`, { data: { tasks: [
+      { title: 'Ordinary task' }, { title: 'Blocked auto-run', autoRun: true, columnId: 'in-progress' },
+    ] } });
+    expect(res.status()).toBe(403);
+    expect((await res.json()).code).toBe('AGENT_EXECUTION_DISABLED');
+    expect(await (await request.get(`${API}/api/tasks`)).json()).toEqual(before);
   });
 });
 
@@ -282,112 +232,25 @@ test.describe('Batch create endpoint', () => {
 // Item 2: agent_complete WebSocket event
 // ---------------------------------------------------------------------------
 
-test.describe('agent_complete WebSocket event', () => {
-  test('receives agent_complete on WS when agent is stopped', async ({ request }) => {
-    test.setTimeout(60_000);
-    const repoPath = prepareTestRepo('api-improvements');
-
-    // 1. Connect to WebSocket FIRST so we don't miss the event
+test.describe('Basic mode event safety', () => {
+  test('moving a task does not emit agent events or completions', async ({ request }) => {
     const ws = new WebSocket(`${API.replace(/^http/, 'ws')}/ws`);
-    await new Promise<void>((resolve, reject) => {
-      ws.on('open', () => resolve());
-      ws.on('error', reject);
-    });
-
-    // Collect all agent_complete messages
-    const completions: any[] = [];
-    ws.on('message', (data: Buffer) => {
-      const msg = JSON.parse(data.toString());
-      if (msg.type === 'agent_complete') {
-        completions.push(msg.payload);
-      }
-    });
-
-    // 2. Create a task with autoRun — agent will start executing
-    const createRes = await request.post(`${API}/api/tasks`, {
-      data: {
-        title: 'WS complete test',
-        description: 'Agent will be stopped to trigger agent_complete',
-        columnId: 'in-progress',
-        agentType: 'copilot',
-        repoPath,
-        autoRun: true,
-      },
-    });
-    const task = await createRes.json();
-
-    // 3. Wait briefly for the agent to start, then stop it
-    await new Promise(r => setTimeout(r, 3_000));
-    await request.post(`${API}/api/tasks/${task.id}/stop`);
-
-    // 4. Wait for agent_complete to arrive via WS
-    await expect(async () => {
-      const match = completions.find(c => c.taskId === task.id);
-      expect(match).toBeTruthy();
-    }).toPass({ timeout: 15_000, intervals: [500] });
-
-    const agentComplete = completions.find(c => c.taskId === task.id);
-    expect(agentComplete.taskId).toBe(task.id);
-    expect(['complete', 'failed']).toContain(agentComplete.status);
-    expect(typeof agentComplete.duration).toBe('number');
-    expect(typeof agentComplete.eventCount).toBe('number');
-
-    // Cleanup
-    ws.close();
-    await deleteTaskViaAPI(request, task.id);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Item 5: Summary events in task events
-// ---------------------------------------------------------------------------
-
-test.describe('Task result summary events', () => {
-  test('events include structured summary with metadata on completion', async ({ request }) => {
-    test.setTimeout(60_000);
-    const repoPath = prepareTestRepo('api-improvements');
-
-    // Create a task with autoRun — agent starts executing
-    const createRes = await request.post(`${API}/api/tasks`, {
-      data: {
-        title: 'Summary event test',
-        description: 'Should generate summary event',
-        columnId: 'in-progress',
-        agentType: 'copilot',
-        repoPath,
-        autoRun: true,
-      },
-    });
-    const task = await createRes.json();
-
-    // Wait for agent to start, then stop it to force a clean termination
-    await new Promise(r => setTimeout(r, 3_000));
-    await request.post(`${API}/api/tasks/${task.id}/stop`);
-
-    // Wait for agent status to reach a terminal state
-    await expect(async () => {
-      const statusRes = await request.get(`${API}/api/tasks/${task.id}/status`);
-      const status = await statusRes.json();
-      expect(['complete', 'failed']).toContain(status.agentStatus);
-    }).toPass({ timeout: 15_000, intervals: [500] });
-
-    // Wait for a summary event with metadata.duration to appear (may lag after stop)
-    let summaryEvent: any;
-    await expect(async () => {
-      const eventsRes = await request.get(`${API}/api/tasks/${task.id}/events`);
-      const events = await eventsRes.json();
-      expect(events.length).toBeGreaterThan(0);
-      summaryEvent = events.find(
-        (e: any) => (e.type === 'complete' || e.type === 'error') && e.metadata?.duration !== undefined
-      );
-      expect(summaryEvent).toBeTruthy();
-    }).toPass({ timeout: 10_000, intervals: [500] });
-
-    expect(typeof summaryEvent.metadata.duration).toBe('number');
-    expect(summaryEvent.metadata.agentType).toBe('copilot');
-
-    // Cleanup
-    await deleteTaskViaAPI(request, task.id);
+    await new Promise<void>((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
+    const messages: any[] = [];
+    ws.on('message', data => messages.push(JSON.parse(data.toString())));
+    const create = await request.post(`${API}/api/tasks`, { data: { title: 'Manual workflow' } });
+    const task = await create.json();
+    try {
+      const moved = await request.patch(`${API}/api/tasks/${task.id}`, { data: { columnId: 'in-progress' } });
+      expect(moved.status()).toBe(200);
+      expect((await moved.json()).agentStatus).toBe('idle');
+      await expect.poll(() => messages.filter(m => m.type === 'task_updated' && m.payload.id === task.id).length).toBeGreaterThan(0);
+      expect(messages.filter(m => ['agent_event', 'agent_complete', 'agent_follow_up'].includes(m.type))).toEqual([]);
+      expect(await (await request.get(`${API}/api/tasks/${task.id}/events`)).json()).toEqual([]);
+      const status = await (await request.get(`${API}/api/tasks/${task.id}/status`)).json();
+      expect(status.isRunning).toBe(false);
+      expect(status.agentStatus).toBe('idle');
+    } finally { ws.close(); await deleteTaskViaAPI(request, task.id); }
   });
 });
 
@@ -395,59 +258,20 @@ test.describe('Task result summary events', () => {
 // Item 6: POST /api/tasks/:id/message — follow-up messages
 // ---------------------------------------------------------------------------
 
-test.describe('Follow-up message endpoint', () => {
-  test('POST /message returns 404 for unknown task', async ({ request }) => {
-    const res = await request.post(`${API}/api/tasks/nonexistent-id/message`, {
-      data: { message: 'hello' },
-    });
-    expect(res.status()).toBe(404);
-  });
-
-  test('POST /message returns 400 with empty message', async ({ request }) => {
-    // Create a task first
-    const createRes = await request.post(`${API}/api/tasks`, {
-      data: { title: 'Message validation test' },
-    });
-    const task = await createRes.json();
-
-    // Empty string
-    const res1 = await request.post(`${API}/api/tasks/${task.id}/message`, {
-      data: { message: '' },
-    });
-    expect(res1.status()).toBe(400);
-    const body1 = await res1.json();
-    expect(body1.error).toContain('message');
-
-    // Missing message field
-    const res2 = await request.post(`${API}/api/tasks/${task.id}/message`, {
-      data: {},
-    });
-    expect(res2.status()).toBe(400);
-
-    // Whitespace-only message
-    const res3 = await request.post(`${API}/api/tasks/${task.id}/message`, {
-      data: { message: '   ' },
-    });
-    expect(res3.status()).toBe(400);
-
-    await deleteTaskViaAPI(request, task.id);
-  });
-
-  test('POST /message returns 409 when no agent is running', async ({ request }) => {
-    // Create a task (no agent running)
-    const createRes = await request.post(`${API}/api/tasks`, {
-      data: { title: 'No agent running test' },
-    });
-    const task = await createRes.json();
-
-    const res = await request.post(`${API}/api/tasks/${task.id}/message`, {
-      data: { message: 'This should fail because no agent is running' },
-    });
-    expect(res.status()).toBe(409);
-    const body = await res.json();
-    expect(body.error).toContain('no running agent');
-
-    await deleteTaskViaAPI(request, task.id);
+test.describe('Follow-up execution guard', () => {
+  test('basic mode rejects messages before mutation, even for invalid input or unknown tasks', async ({ request }) => {
+    const create = await request.post(`${API}/api/tasks`, { data: { title: 'Guarded message' } });
+    const task = await create.json();
+    const before = (await (await request.get(`${API}/api/tasks`)).json()).find((saved: any) => saved.id === task.id);
+    try {
+      for (const [id, data] of [[task.id, { message: 'hello' }], [task.id, { message: '' }], [task.id, {}], ['nonexistent-id', { message: 'hello' }]] as const) {
+        const res = await request.post(`${API}/api/tasks/${id}/message`, { data });
+        expect(res.status()).toBe(403);
+        expect((await res.json()).code).toBe('AGENT_EXECUTION_DISABLED');
+      }
+      expect((await (await request.get(`${API}/api/tasks`)).json()).find((saved: any) => saved.id === task.id)).toEqual(before);
+      expect(await (await request.get(`${API}/api/tasks/${task.id}/events`)).json()).toEqual([]);
+    } finally { await deleteTaskViaAPI(request, task.id); }
   });
 });
 

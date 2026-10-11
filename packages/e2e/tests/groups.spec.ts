@@ -334,27 +334,17 @@ test.describe('Task Groups API', () => {
     }
   });
 
-  test('E12: POST /api/groups/:id/run returns 409 if already running', async ({ request }) => {
-    const createRes = await request.post(`${API}/api/groups`, {
-      data: {
-        title: 'Conflict Test Group',
-        maxConcurrency: 1,
-        children: makeChildren(2),
-      },
-    });
-    const group = await createRes.json();
+  test('E12: basic mode rejects group run without changing the queue or children', async ({ request }) => {
+    const created = await request.post(`${API}/api/groups`, { data: { title: 'Guarded group', maxConcurrency: 1, children: makeChildren(2) } });
+    const group = await created.json();
     createdGroupIds.push(group.id);
-
-    // First run
-    const runRes = await request.post(`${API}/api/groups/${group.id}/run`);
-    // May succeed or fail depending on agent availability — just need it to start the queue
-    if (runRes.status() === 200) {
-      // Second run should be rejected (409 conflict or 429 rate limited)
-      const conflictRes = await request.post(`${API}/api/groups/${group.id}/run`);
-      expect([409, 429]).toContain(conflictRes.status());
-      // Clean up
-      await request.post(`${API}/api/groups/${group.id}/stop`);
+    const before = await (await request.get(`${API}/api/groups/${group.id}`)).json();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await request.post(`${API}/api/groups/${group.id}/run`);
+      expect(res.status()).toBe(403);
+      expect((await res.json()).code).toBe('AGENT_EXECUTION_DISABLED');
     }
+    expect(await (await request.get(`${API}/api/groups/${group.id}`)).json()).toEqual(before);
   });
 
   test('GET /api/groups/:id returns 404 for unknown group', async ({ request }) => {
@@ -362,9 +352,9 @@ test.describe('Task Groups API', () => {
     expect(res.status()).toBe(404);
   });
 
-  test('POST /api/groups/:id/run returns 404 for unknown group', async ({ request }) => {
+  test('basic mode guards group execution before group lookup', async ({ request }) => {
     const res = await request.post(`${API}/api/groups/nonexistent-id/run`);
-    expect(res.status()).toBe(404);
+    expect(res.status()).toBe(403);
   });
 
   test('POST /api/groups/:id/stop returns 404 for unknown group', async ({ request }) => {

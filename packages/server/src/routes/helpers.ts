@@ -1,3 +1,4 @@
+import { isAgentExecutionEnabled, assertAgentExecutionEnabled, AgentExecutionDisabledError } from '../services/execution-policy.js';
 import { Request, Response, NextFunction } from 'express';
 import { v4 as uuid } from 'uuid';
 import { execFileSync } from 'child_process';
@@ -11,6 +12,14 @@ import { getCloneRoot } from '../config.js';
 import type { TaskRepository } from '../repositories/types.js';
 import { broadcast } from '../websocket.js';
 import type { AgentManager } from '../services/agent-manager.js';
+
+/** Reject explicit execution before any repository state or run intent changes. */
+export function rejectDisabledExecution(res: Response): boolean {
+  if (isAgentExecutionEnabled()) return false;
+  const error = new AgentExecutionDisabledError();
+  res.status(403).json({ error: error.message, code: error.code });
+  return true;
+}
 
 // ─── Async handler wrapper ──────────────────────────────────────────
 
@@ -569,6 +578,7 @@ export async function startAgentForTask(
   repo: TaskRepository,
   agentManager: AgentManager,
 ): Promise<void> {
+  assertAgentExecutionEnabled();
   const claimed = await repo.claimRun(task.id, Date.now());
   if (!claimed) return;
   task = claimed;

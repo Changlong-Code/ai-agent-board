@@ -3,7 +3,6 @@ const { spawn } = require('node:child_process');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const isWindows = process.platform === 'win32';
 const dbPath = path.join(repoRoot, 'packages', 'e2e', 'test-results', 'agentboard-e2e.db');
 const agentboardHome = path.join(repoRoot, 'packages', 'e2e', 'test-results', 'agentboard-home');
 function portFromEnv(name, fallback) {
@@ -27,7 +26,7 @@ rmSync(dbPath, { force: true });
 rmSync(agentboardHome, { recursive: true, force: true });
 mkdirSync(agentboardHome, { recursive: true });
 
-const child = spawn(isWindows ? 'npx tsx src/index.ts' : 'npx', isWindows ? [] : ['tsx', 'src/index.ts'], {
+const child = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
   cwd: path.join(repoRoot, 'packages', 'server'),
   env: {
     ...process.env,
@@ -42,7 +41,6 @@ const child = spawn(isWindows ? 'npx tsx src/index.ts' : 'npx', isWindows ? [] :
     // unauthenticated environment can't crash the server on startup.
     AGENTBOARD_DISABLE_AGENT_STARTUP: '1',
   },
-  shell: isWindows,
   stdio: 'inherit',
 });
 

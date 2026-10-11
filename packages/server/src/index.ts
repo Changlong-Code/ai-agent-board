@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { isAgentExecutionEnabled } from './services/execution-policy.js';
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
@@ -90,27 +91,29 @@ const agentManager = new AgentManager();
   agentManager.initEventPersistence(taskRepo);
   agentManager.initAttachmentStore(attachmentStore);
 
-  try {
-    const projects = await projectRepo.getAllWithCounts();
-    const tasks = (await Promise.all(projects.map(async (project) => {
-      const standalone = await taskRepo.getAll(true, project.id);
-      const groups = await groupRepo.getAll(true, project.id);
-      const children = (await Promise.all(groups.map((group) => groupRepo.getChildTasks(group.id)))).flat();
-      return [...standalone, ...children];
-    }))).flat();
-    const report = await reconcileManagedWorktrees(
-      tasks,
-      projects.flatMap((project) => project.repoPath ? [project.repoPath] : []),
-      taskRepo,
-    );
-    if (report.removed.length || report.missing.length || report.blocked.length) {
-      console.log(`[worktree] startup reconciliation: ${report.removed.length} removed, ${report.missing.length} missing, ${report.blocked.length} blocked`);
-      for (const blocked of report.blocked) {
-        console.warn(`[worktree] retained ${blocked.path}: ${blocked.reason}`);
+  if (isAgentExecutionEnabled()) {
+    try {
+      const projects = await projectRepo.getAllWithCounts();
+      const tasks = (await Promise.all(projects.map(async (project) => {
+        const standalone = await taskRepo.getAll(true, project.id);
+        const groups = await groupRepo.getAll(true, project.id);
+        const children = (await Promise.all(groups.map((group) => groupRepo.getChildTasks(group.id)))).flat();
+        return [...standalone, ...children];
+      }))).flat();
+      const report = await reconcileManagedWorktrees(
+        tasks,
+        projects.flatMap((project) => project.repoPath ? [project.repoPath] : []),
+        taskRepo,
+      );
+      if (report.removed.length || report.missing.length || report.blocked.length) {
+        console.log(`[worktree] startup reconciliation: ${report.removed.length} removed, ${report.missing.length} missing, ${report.blocked.length} blocked`);
+        for (const blocked of report.blocked) {
+          console.warn(`[worktree] retained ${blocked.path}: ${blocked.reason}`);
+        }
       }
+    } catch (err) {
+      console.error('[worktree] startup reconciliation failed:', err);
     }
-  } catch (err) {
-    console.error('[worktree] startup reconciliation failed:', err);
   }
 
   app.use('/api/projects', createProjectsRouter(projectRepo, taskRepo, groupRepo, agentManager));
@@ -128,7 +131,7 @@ const agentManager = new AgentManager();
 
   // Health check (no auth required)
   app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', timestamp: Date.now() });
+    res.json({ status: 'ok', agentExecutionEnabled: isAgentExecutionEnabled(), timestamp: Date.now() });
   });
 
   // Global error handler — catches errors forwarded by asyncHandler wrappers
@@ -145,68 +148,72 @@ const agentManager = new AgentManager();
   await agentManager.initialize();
 
 
-  // Recover orphaned task groups first — group children get group-aware
-  // recovery (planning → idle for re-queue, executing → failed) before the
-  // generic fallback below resets everything to failed.
-  const groupChildIds = new Set<string>();
-  try {
-    const allGroups = await groupRepo.getAll();
-    for (const group of allGroups) {
-      if (group.columnId === 'in-progress') {
-        const children = await groupRepo.getChildTasks(group.id);
-        for (const child of children) {
-          groupChildIds.add(child.id);
-          if (child.agentStatus === 'executing') {
-            await taskRepo.update(child.id, { agentStatus: 'failed', completedAt: Date.now() });
-            await taskRepo.clearRun(child.id);
-            console.warn(`[server] recovered orphaned group child ${child.id} "${child.title}" (was executing)`);
-          } else if (child.agentStatus === 'planning') {
-            // Planning children hadn't started — reset to idle so they can be re-queued
-            await taskRepo.update(child.id, { agentStatus: 'idle', startedAt: undefined });
-            console.warn(`[server] reset group child ${child.id} "${child.title}" (was planning → idle)`);
+  if (isAgentExecutionEnabled()) {
+    // Recover orphaned task groups first — group children get group-aware
+    // recovery (planning → idle for re-queue, executing → failed) before the
+    // generic fallback below resets everything to failed.
+    const groupChildIds = new Set<string>();
+    try {
+      const allGroups = await groupRepo.getAll();
+      for (const group of allGroups) {
+        if (group.columnId === 'in-progress') {
+          const children = await groupRepo.getChildTasks(group.id);
+          for (const child of children) {
+            groupChildIds.add(child.id);
+            if (child.agentStatus === 'executing') {
+              await taskRepo.update(child.id, { agentStatus: 'failed', completedAt: Date.now() });
+              await taskRepo.clearRun(child.id);
+              console.warn(`[server] recovered orphaned group child ${child.id} "${child.title}" (was executing)`);
+            } else if (child.agentStatus === 'planning') {
+              // Planning children hadn't started — reset to idle so they can be re-queued
+              await taskRepo.update(child.id, { agentStatus: 'idle', startedAt: undefined });
+              console.warn(`[server] reset group child ${child.id} "${child.title}" (was planning → idle)`);
+            }
+          }
+          // Check if group should auto-advance after recovery
+          const updatedChildren = await groupRepo.getChildTasks(group.id);
+          const allDone = updatedChildren.every(c => c.agentStatus === 'complete' || c.agentStatus === 'failed');
+          const anyFailed = updatedChildren.some(c => c.agentStatus === 'failed');
+          if (allDone && !anyFailed) {
+            await groupRepo.update(group.id, { columnId: 'review', completedAt: Date.now() });
+            console.warn(`[server] recovered group ${group.id} "${group.title}" → review`);
           }
         }
-        // Check if group should auto-advance after recovery
-        const updatedChildren = await groupRepo.getChildTasks(group.id);
-        const allDone = updatedChildren.every(c => c.agentStatus === 'complete' || c.agentStatus === 'failed');
-        const anyFailed = updatedChildren.some(c => c.agentStatus === 'failed');
-        if (allDone && !anyFailed) {
-          await groupRepo.update(group.id, { columnId: 'review', completedAt: Date.now() });
-          console.warn(`[server] recovered group ${group.id} "${group.title}" → review`);
-        }
       }
+    } catch (err) {
+      console.error('[server] failed to recover groups:', err);
     }
-  } catch (err) {
-    console.error('[server] failed to recover groups:', err);
-  }
 
-  // Re-dispatch durable requests left unclaimed by a crash.
-  const recoveredRunIds = new Set<string>();
-  for (const pending of await taskRepo.getPendingRuns(Date.now())) {
-    console.warn(`[server] recovering requested run ${pending.id}`);
-    recoveredRunIds.add(pending.id);
-    await startAgentForTask(pending, taskRepo, agentManager);
-  }
+    // Re-dispatch durable requests left unclaimed by a crash.
+    const recoveredRunIds = new Set<string>();
+    for (const pending of await taskRepo.getPendingRuns(Date.now())) {
+      console.warn(`[server] recovering requested run ${pending.id}`);
+      recoveredRunIds.add(pending.id);
+      await startAgentForTask(pending, taskRepo, agentManager);
+    }
 
-  // Recover standalone tasks orphaned by a previous server restart.
-  // Skip group children (already handled above with group-aware recovery).
-  const allTasks = await taskRepo.getAll();
-  const orphaned = allTasks.filter(t =>
-    (t.agentStatus === 'planning' || t.agentStatus === 'executing')
-      && !groupChildIds.has(t.id)
-      && !recoveredRunIds.has(t.id)
-  );
-  for (const task of orphaned) {
-    await taskRepo.update(task.id, {
-      agentStatus: 'failed',
-      completedAt: Date.now(),
-    });
-    await taskRepo.clearRun(task.id);
-    console.warn(`[server] recovered orphaned task ${task.id} "${task.title}" (was ${task.agentStatus})`);
-  }
+    // Recover standalone tasks orphaned by a previous server restart.
+    // Skip group children (already handled above with group-aware recovery).
+    const allTasks = await taskRepo.getAll();
+    const orphaned = allTasks.filter(t =>
+      (t.agentStatus === 'planning' || t.agentStatus === 'executing')
+        && !groupChildIds.has(t.id)
+        && !recoveredRunIds.has(t.id)
+    );
+    for (const task of orphaned) {
+      await taskRepo.update(task.id, {
+        agentStatus: 'failed',
+        completedAt: Date.now(),
+      });
+      await taskRepo.clearRun(task.id);
+      console.warn(`[server] recovered orphaned task ${task.id} "${task.title}" (was ${task.agentStatus})`);
+    }
+
+  } // Basic mode preserves pending and orphaned task records.
 
   // Reclaim stale dispatch leases continuously, not only after a restart.
   const dispatchInterval = setInterval(() => {
+    if (!isAgentExecutionEnabled()) return;
     void (async () => {
       for (const pending of await taskRepo.getPendingRuns()) {
         if (!agentManager.isRunning(pending.id)) {

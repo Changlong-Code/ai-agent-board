@@ -78,3 +78,7 @@ run-required-gate.cjs 已区分 Windows PowerShell 与 Unix sh；e2e-server/clie
 ### 本批验证
 已复核源文件和锁文件、读取官方 Node 文档。没有 npm install、构建、E2E 或目标实机结果。本批仅补充文档。
 M1 保持进行中：完整命令路径审计、原生依赖验证和目标实机验证仍未完成。
+
+## M2 基础模式第一批实现
+2026-10-11：默认禁止Agent执行；初始化/刷新延迟加载SDK；路由和运行时统一拒绝；基础模式跳过启动worktree清理、pending恢复和orphan状态改写。统一策略见 execution-policy.ts。
+当前Linux Node24.19.0：npm ci成功；前后端构建通过；服务端81项测试通过。required gate浏览器验收失败，Chromium下载为无效zip，未取得UI通过证据。Windows1909未验，M1/M2均不标完成。

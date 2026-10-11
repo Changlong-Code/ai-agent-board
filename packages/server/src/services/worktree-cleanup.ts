@@ -102,6 +102,9 @@ function isDisposableIgnoredPath(value: string): boolean {
 
 export type WorktreeProcessUse = 'clear' | 'in-use' | 'unknown';
 
+/** Internal dependency seam for deterministic process-table fixtures; defaults fail closed. */
+export type WorktreeProcessInspector = (worktreePath: string) => WorktreeProcessUse;
+
 function processEntryDisappeared(error: unknown): boolean {
   return !!error && typeof error === 'object' && 'code' in error
     && ((error as NodeJS.ErrnoException).code === 'ENOENT' || (error as NodeJS.ErrnoException).code === 'ESRCH');
@@ -150,6 +153,7 @@ function inspectRegisteredPath(
   repoPath: string,
   worktreePath: string,
   expectedBranch?: string,
+  inspectProcessUse: WorktreeProcessInspector = inspectWorktreeProcessUse,
 ): WorktreeCleanupInspection {
   if (!expectedBranch) return { status: 'blocked', reason: 'Task has no branch to verify.' };
   const resolvedRepo = path.resolve(repoPath);
@@ -207,7 +211,7 @@ function inspectRegisteredPath(
     if (unsafe.length) {
       return { status: 'blocked', reason: 'Worktree has uncommitted, untracked, or non-disposable ignored files.' };
     }
-    const processUse = inspectWorktreeProcessUse(resolvedWorktree);
+    const processUse = inspectProcessUse(resolvedWorktree);
     if (processUse === 'in-use') {
       return { status: 'blocked', reason: 'A running process is using the worktree.' };
     }
@@ -222,8 +226,8 @@ function inspectRegisteredPath(
   return { status: 'ready', device: before.dev, inode: before.ino };
 }
 
-function cleanupRegisteredPath(repoPath: string, worktreePath: string, expectedBranch?: string): WorktreeCleanupResult {
-  const inspection = inspectRegisteredPath(repoPath, worktreePath, expectedBranch);
+function cleanupRegisteredPath(repoPath: string, worktreePath: string, expectedBranch?: string, inspectProcessUse: WorktreeProcessInspector = inspectWorktreeProcessUse): WorktreeCleanupResult {
+  const inspection = inspectRegisteredPath(repoPath, worktreePath, expectedBranch, inspectProcessUse);
   if (inspection.status !== 'ready') return inspection;
   const resolvedWorktree = path.resolve(worktreePath);
   try {
@@ -243,12 +247,12 @@ function cleanupRegisteredPath(repoPath: string, worktreePath: string, expectedB
 }
 
 /** Remove only a clean, registered worktree created by Agent Board. */
-export function cleanupTaskWorktree(task: Task): WorktreeCleanupResult {
+export function cleanupTaskWorktree(task: Task, inspectProcessUse: WorktreeProcessInspector = inspectWorktreeProcessUse): WorktreeCleanupResult {
   if (!task.worktreePath || !task.repoPath) return { status: 'missing' };
   if (!managedPathForTask(task)) {
     return { status: 'blocked', reason: 'Refusing to remove a path outside the Board-managed worktree path.' };
   }
-  return cleanupRegisteredPath(task.repoPath, task.worktreePath, task.branchName);
+  return cleanupRegisteredPath(task.repoPath, task.worktreePath, task.branchName, inspectProcessUse);
 }
 
 export function inspectTaskWorktree(task: Task): WorktreeCleanupInspection {
@@ -262,8 +266,9 @@ export function inspectTaskWorktree(task: Task): WorktreeCleanupInspection {
 export async function cleanupPersistedTaskWorktree(
   task: Task,
   repo: TaskRepository,
+  inspectProcessUse: WorktreeProcessInspector = inspectWorktreeProcessUse,
 ): Promise<{ task: Task; result: WorktreeCleanupResult }> {
-  const result = cleanupTaskWorktree(task);
+  const result = cleanupTaskWorktree(task, inspectProcessUse);
   if (result.status === 'blocked' || !task.worktreePath) return { task, result };
   const updated = await repo.update(task.id, { worktreePath: undefined });
   return { task: updated ?? { ...task, worktreePath: undefined }, result };
@@ -274,6 +279,7 @@ export async function reconcileManagedWorktrees(
   tasks: Task[],
   repoPaths: string[],
   repo: TaskRepository,
+  inspectProcessUse: WorktreeProcessInspector = inspectWorktreeProcessUse,
 ): Promise<WorktreeReconciliationReport> {
   const report: WorktreeReconciliationReport = { removed: [], missing: [], blocked: [] };
   const referencedPaths = new Set(
@@ -282,7 +288,7 @@ export async function reconcileManagedWorktrees(
 
   for (const task of tasks) {
     if (!task.worktreePath || (task.columnId !== 'done' && !task.archived)) continue;
-    const { result } = await cleanupPersistedTaskWorktree(task, repo);
+    const { result } = await cleanupPersistedTaskWorktree(task, repo, inspectProcessUse);
     if (result.status === 'removed') report.removed.push(task.worktreePath);
     else if (result.status === 'missing') report.missing.push(task.worktreePath);
     else report.blocked.push({ path: task.worktreePath, reason: result.reason });
@@ -293,7 +299,7 @@ export async function reconcileManagedWorktrees(
     try { registered = listRegisteredWorktrees(repoPath); } catch { continue; }
     for (const worktree of registered) {
       if (referencedPaths.has(normalizedPath(worktree.path)) || !managedOrphanPath(worktree.path)) continue;
-      const result = cleanupRegisteredPath(repoPath, worktree.path, worktree.branch);
+      const result = cleanupRegisteredPath(repoPath, worktree.path, worktree.branch, inspectProcessUse);
       if (result.status === 'removed') report.removed.push(worktree.path);
       else if (result.status === 'missing') report.missing.push(worktree.path);
       else report.blocked.push({ path: worktree.path, reason: result.reason });

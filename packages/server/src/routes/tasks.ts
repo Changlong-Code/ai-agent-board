@@ -1,3 +1,4 @@
+import { rejectDisabledExecution } from './helpers.js';
 import { Router, Request, Response } from 'express';
 import path from 'path';
 import type { Project, Task } from '../types.js';
@@ -32,6 +33,7 @@ export function createTaskRouter(repo: TaskRepository, agentManager: AgentManage
 
   // POST /api/tasks
   router.post('/', asyncHandler(async (req: Request, res: Response) => {
+    if (req.body.autoRun === true && rejectDisabledExecution(res)) return;
     const project = await getProjectForRequest(projectRepo, req.body.projectId);
     if (!project) { res.status(400).json({ error: 'projectId is invalid' }); return; }
     const enforced = enforceProjectRepoPath(req.body, project);
@@ -78,6 +80,7 @@ export function createTaskRouter(repo: TaskRepository, agentManager: AgentManage
 
   // POST /api/tasks/batch — create multiple tasks, optionally auto-run them
   router.post('/batch', asyncHandler(async (req: Request, res: Response) => {
+    if (Array.isArray(req.body.tasks) && req.body.tasks.some((task: any) => task?.autoRun === true) && rejectDisabledExecution(res)) return;
     const { tasks: taskDefs } = req.body;
 
     if (!Array.isArray(taskDefs) || taskDefs.length === 0) {

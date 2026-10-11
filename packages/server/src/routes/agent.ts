@@ -1,3 +1,4 @@
+import { rejectDisabledExecution } from './helpers.js';
 import { Router, Request, Response } from 'express';
 import path from 'path';
 import type { Task } from '../types.js';
@@ -103,6 +104,7 @@ export function createAgentRouter(
 
   // POST /api/tasks/:id/run
   router.post('/:id/run', asyncHandler(async (req: Request, res: Response) => {
+    if (rejectDisabledExecution(res)) return;
     const id = paramId(req);
     if (isRateLimited(id)) {
       res.status(429).json({ error: 'too many requests, try again shortly' });
@@ -191,6 +193,7 @@ export function createAgentRouter(
 
   // POST /api/tasks/:id/message — send a follow-up message to a running agent
   router.post('/:id/message', asyncHandler(async (req: Request, res: Response) => {
+    if (rejectDisabledExecution(res)) return;
     const id = paramId(req);
     const task = await repo.getById(id);
     if (!task) {

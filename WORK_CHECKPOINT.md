@@ -8,25 +8,26 @@
 按 WINDOWS_PLAN.md 推进Windows10 1909本地版；不升级系统、不增加硬件、不买API，保留数据。
 用户已明确“可以呀”开始M1并再次“继续开发”；计划中“当前仅授权文档”是旧阶段快照，不能据此要求用户重复授权。真实业务项目和真实Agent执行仍未获本次授权。
 
-## 本批完成
-- 读取AgentManager初始化/刷新、服务启动、config/db、worktree清理及跨平台gate/E2E启动脚本。
-- 核对锁文件关键版本和Node engines。
-- 读取Node22.x官方BUILDING平台声明并保留支持边界。
-- 更新WINDOWS_COMPATIBILITY，建立M1_TASKS与本检查点。
-- 本批只修改Markdown，未修改功能代码、安装依赖、调用Agent或迁移数据。
+## 本批完成（M2 基础模式第一批实现）
+- 新增统一执行策略：默认基础模式，只有 `AGENTBOARD_ENABLE_AGENT_EXECUTION=1` 显式启用；旧 `AGENTBOARD_DISABLE_AGENT_STARTUP` 禁用设置优先。
+- AgentManager 初始化和刷新在基础模式下不加载运行时 SDK、不检测或构造 Provider；运行时 SDK 改为延迟加载。
+- 手动启动、follow-up、任务自动执行、组队列与编排入口增加执行边界；拒绝执行前保留任务及执行状态。
+- 基础模式启动保留 pending 和 orphaned 任务记录，不自动恢复 AI、不重置状态、不自动清理 worktree。
+- 客户端与服务端构建通过；针对执行策略和基础模式的测试通过。最终服务端测试81/81通过；完整gate未通过。
 
-## 关键发现
-旧禁用开关仅覆盖initialize部分逻辑，refresh可能启动Provider。
-服务启动迁移数据库、创建配置/目录、清理部分worktree、恢复pending任务；基础模式需要统一执行策略与只读报告清理。
-DB_PATH默认与cwd有关，配置损坏会覆盖默认；M2需固定目录和保留原件。
+## 验证状态与阻碍
+- 本批测试使用隔离环境，不调用真实 Provider 或真实付费任务。
+- `gate:required` 已执行，服务端合同测试、Hermes测试及构建通过，浏览器E2E受阻。worktree测试改用受控进程表，生产默认检查保持不变；E2E服务器改用node --import tsx启动。
+- 最终测试证据：npm test -w @ai-agent-board/server：81通过、0失败；客户端/服务端构建通过；启动保留回归测试已包含在81项中。Chromium及headless shell下载均返回无效zip，UI测试因缺少浏览器失败，完整gate不通过。代码仅为未验收开发检查点，不合并main或标记完成。
+- Windows 10 1909 实机兼容性未验证；Linux 构建结果不替代目标电脑验收。
 
 ## 未完成与下一步
-1. 补齐Node24官方声明及目标环境诊断；CLI/SDK内部进程调用、git与上传路径完整审计。
-2. 建立隔离源码测试环境，确认依赖获取能力；未获取成功不得声称gate通过。
-3. 实施M2-01执行禁用策略，覆盖刷新、所有手动/自动调度和恢复，保留pending数据。
-4. 实施数据目录保护，再制作双击启动器。
-5. 跑针对测试和required gate，再进行1909实机验收。
-M1仍进行中；M2–M6未完成。
+1. 解决Chromium下载阻碍，再运行完整required gate；执行边界与worktree测试注入已获得独立审查通过。
+2. 补齐 Node 24 官方声明及目标环境诊断；CLI/SDK 内部进程调用、git 与上传路径完整审计。
+3. 实施独立数据目录、损坏配置保留、迁移前备份等 M2-03 其余数据保护。
+4. 制作 Windows 双击启动器、固定 loopback、处理重复启动与端口冲突。
+5. 完成 Windows 10 1909 实机验收。
+M1 仍进行中；M2 已开始实现但尚未完成，M3–M6 未完成。
 
 ## 恢复步骤
 读取本分支最新HEAD（不要固定旧SHA进行覆盖），先检查AGENTS.md与squad规则，再读计划、兼容报告和任务清单。

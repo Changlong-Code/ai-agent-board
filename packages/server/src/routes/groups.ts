@@ -1,3 +1,5 @@
+import { assertAgentExecutionEnabled } from '../services/execution-policy.js';
+import { rejectDisabledExecution } from './helpers.js';
 import { Router, Request, Response } from 'express';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
@@ -65,6 +67,10 @@ export function createGroupsRouter(
 
   // POST /api/groups — create group with children
   router.post('/', asyncHandler(async (req: Request, res: Response) => {
+    if (req.body.autoRun !== undefined && typeof req.body.autoRun !== 'boolean') {
+      res.status(400).json({ error: 'autoRun must be a boolean' }); return;
+    }
+    if (req.body.autoRun === true && rejectDisabledExecution(res)) return;
     const project = await getProjectForRequest(projectRepo, req.body.projectId);
     if (!project) { res.status(400).json({ error: 'projectId is invalid' }); return; }
     const body = enforceProjectRepoPath(req.body, project);
@@ -333,6 +339,7 @@ export function createGroupsRouter(
 
   // POST /api/groups/:id/run — start group execution
   router.post('/:id/run', asyncHandler(async (req: Request, res: Response) => {
+    if (rejectDisabledExecution(res)) return;
     const id = paramId(req);
     if (isRateLimited(id)) {
       res.status(429).json({ error: 'Rate limited — wait a few seconds' }); return;
@@ -447,6 +454,7 @@ async function startGroupExecution(
   taskRepo: TaskRepository,
   agentManager: AgentManager,
 ): Promise<void> {
+  assertAgentExecutionEnabled();
   const group = await groupRepo.getById(groupId);
   if (!group) return;
 

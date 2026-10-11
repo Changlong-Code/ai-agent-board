@@ -1,3 +1,4 @@
+import { rejectDisabledExecution } from './helpers.js';
 import { Router, type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import type { Task, ExecutionAttempt, AgentEvent } from '../types.js';
@@ -359,6 +360,7 @@ export function createOrchestrationsRouter(
   }));
 
   router.post('/:id/message', asyncHandler(async (req: Request, res: Response) => {
+    if (rejectDisabledExecution(res)) return;
     const orchestration = await orchestrationTask(repo, String(req.params.id));
     if (!orchestration) {
       res.status(404).json({ error: 'orchestration not found' });
@@ -378,6 +380,7 @@ export function createOrchestrationsRouter(
   }));
 
   router.post('/:id/retry', asyncHandler(async (req: Request, res: Response) => {
+    if (rejectDisabledExecution(res)) return;
     const key = req.header('Idempotency-Key')?.trim();
     if (!key) { res.status(400).json({ error: 'Idempotency-Key is required' }); return; }
     if (key.length > 200) { res.status(400).json({ error: 'Idempotency-Key is too long' }); return; }
@@ -474,6 +477,7 @@ export function createOrchestrationsRouter(
   }));
 
   router.post('/', asyncHandler(async (req: Request, res: Response) => {
+    if ((req.body.autoStart ?? req.body.auto_start ?? true) === true && rejectDisabledExecution(res)) return;
     const suppliedKey = (req.header('Idempotency-Key') || req.body.externalKey)?.trim();
     const requestIdentity = orchestrationRequestIdentity(req.body);
     if (suppliedKey && suppliedKey.length <= 200) {

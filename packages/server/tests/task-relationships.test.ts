@@ -116,6 +116,11 @@ test('orchestration read exposes full agent output separately from the compact s
 });
 
 async function withApi(repo: SqliteTaskRepository, run: (base: string) => Promise<void>, manager: AgentManager = agents, projectRepo: ProjectRepository = projects) {
+  // These contract tests use only stub providers; opt in within the isolated harness.
+  const previousEnable = process.env.AGENTBOARD_ENABLE_AGENT_EXECUTION;
+  const previousDisable = process.env.AGENTBOARD_DISABLE_AGENTS;
+  process.env.AGENTBOARD_ENABLE_AGENT_EXECUTION = '1';
+  delete process.env.AGENTBOARD_DISABLE_AGENTS;
   const app = express();
   app.use(express.json());
   app.use('/api/tasks', createTaskRouter(repo, manager, projectRepo));
@@ -125,7 +130,13 @@ async function withApi(repo: SqliteTaskRepository, run: (base: string) => Promis
   const address = server.address();
   assert(address && typeof address === 'object');
   try { await run(`http://127.0.0.1:${address.port}`); }
-  finally { await new Promise<void>((resolve, reject) => server.close((err) => err ? reject(err) : resolve())); }
+  finally {
+    await new Promise<void>((resolve, reject) => server.close((err) => err ? reject(err) : resolve()));
+    if (previousEnable === undefined) delete process.env.AGENTBOARD_ENABLE_AGENT_EXECUTION;
+    else process.env.AGENTBOARD_ENABLE_AGENT_EXECUTION = previousEnable;
+    if (previousDisable === undefined) delete process.env.AGENTBOARD_DISABLE_AGENTS;
+    else process.env.AGENTBOARD_DISABLE_AGENTS = previousDisable;
+  }
 }
 
 test('SQLite relationships are symmetric, idempotent, same-project, and cascade', async () => {

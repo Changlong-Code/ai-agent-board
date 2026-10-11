@@ -273,3 +273,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## License
 
 [MIT](LICENSE)
+
+## Windows local development: basic mode
+
+Agent execution is disabled by default on the `windows-m1` branch. The board can manage tasks without loading providers or probing agent CLIs. Refresh does not start providers. Explicit run, follow-up, group execution and automatic orchestration requests return `403` with `AGENT_EXECUTION_DISABLED`; ordinary CRUD remains available. Startup does not recover queued runs, rewrite orphan execution status, or reconcile/delete managed worktrees in basic mode.
+
+Existing AI installations must explicitly set `AGENTBOARD_ENABLE_AGENT_EXECUTION=1` to retain execution behavior. `AGENTBOARD_DISABLE_AGENT_STARTUP=1` or `true` overrides this opt-in. This is an execution switch, not complete per-project authorization or a billing limit. Do not enable it merely to open the board.
+
+SQLite initialization/migrations and config-directory creation still occur. Use isolated data/config paths for testing. Double-click launch, corrupt-config preservation, complete storage isolation and Windows 10 1909 verification remain planned; this branch is not a finished Windows installer.
