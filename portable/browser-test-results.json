@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-18T09:29:02.009Z",
+  "passed": 11,
+  "browser": "153.0.8010.0",
+  "environment": "Linux Chromium file://; Windows 10 1909 not tested",
+  "tests": [
+    "project create rename delete and task project isolation",
+    "task create edit and literal unsafe text",
+    "search priority filter and status menu drag reload",
+    "archive restore and reject nonempty project deletion",
+    "real JSON download task deletion and valid import",
+    "malformed schema duplicate and orphan imports preserve state",
+    "snapshot comparison blocks write without storage event",
+    "second tab modification blocks stale import and writes",
+    "clear storage event blocks stale import",
+    "corrupt data preserved and recovery backup retained",
+    "no JavaScript errors or external requests"
+  ]
+}
