@@ -1,0 +1,22 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { runSelfTest } = require('./original-selftest.cjs');
+test('selftest exercises original launcher with IPC shutdown, restart and readable SQLite backup', { timeout: 60000 }, async t => {
+  const reportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'original-selftest-report-'));
+  t.after(() => fs.rmSync(reportDir, { recursive: true, force: true }));
+  const report = await runSelfTest({ reportDir });
+  assert.equal(report.passed, true, JSON.stringify(report));
+  assert.equal(report.checks.length, 9);
+  assert.ok(report.checks.every(check => check.passed));
+  assert.equal(report.environment.platform, process.platform);
+  const files = fs.readdirSync(reportDir);
+  assert.equal(files.filter(file => file.endsWith('.json')).length, 1);
+  assert.equal(files.filter(file => file.endsWith('.md')).length, 1);
+  const saved = JSON.parse(fs.readFileSync(path.join(reportDir, files.find(file => file.endsWith('.json'))), 'utf8'));
+  assert.equal(saved.passed, true);
+  assert.match(saved.cleanup, /已清理/);
+});

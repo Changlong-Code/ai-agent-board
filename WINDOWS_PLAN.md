@@ -164,3 +164,12 @@
 3. Linux完整门禁已通过：86服务合同、3Hermes、E2E180通过/4既有真实Agent跳过；这不代替Windows实机。
 4. M1/M2目标实机通过后，再按第7、8节推进M3与M4；不提前把真实账号或真实项目运行标为成功。
 5. 当前用户要求断点保存，已暂停；不自动续跑M3–M6。
+
+
+## 2026-10-18：原版 M2 诊断、自检和受控恢复增量
+
+从 174bd6b81a5eaaf628ed667281d4e6088b23f9c3 继续，新增 Verify/Backup/Restore CMD；诊断自动导出脱敏中文报告。隔离自检内部 9 项通过且重复验证，受控恢复要求快照 ID、恢复前安全备份、失败回滚，恢复中断标记阻止启动。当前损坏数据库不能用此工具直接覆盖修复。
+
+最终独立专项 23/23（备份11、诊断4、启动器7、自检1）通过；完整 required gate 退出0：服务86/86、Hermes3/3、构建通过、E2E180通过/4项既有真实Agent跳过。另有实际 React 浏览器交互复测，详见 windows/ORIGINAL_M2_TEST_REPORT.md 和 ORIGINAL_REVIEW.md。未调用真实AI或读取用户项目。
+
+下一步：目标电脑运行 Setup → Diagnose → Verify → Start；正常停止后演练 Backup/Restore。Windows1909、CMD和Windows进程生命周期未验证，M1/M2仍待实机；随后推进M3授权隔离与M4示例CLI接入。上方暂停文字是历史记录，本批用户已要求继续。

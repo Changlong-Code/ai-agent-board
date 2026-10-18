@@ -1,0 +1,51 @@
+{
+  "createdAt": "2026-10-18T19:48:55.177Z",
+  "environment": {
+    "platform": "linux",
+    "release": "6.18.55",
+    "architecture": "x64",
+    "node": "24.19.0"
+  },
+  "scope": "原版编译服务、React 静态资源和 SQLite 接口验收；不包含浏览器点击或真实 AI 调用。",
+  "passed": true,
+  "checks": [
+    {
+      "name": "隔离临时目录、动态端口启动原版",
+      "passed": true
+    },
+    {
+      "name": "健康检查：Agent 执行明确禁用",
+      "passed": true
+    },
+    {
+      "name": "原版 React 首页静态资源返回 200",
+      "passed": true
+    },
+    {
+      "name": "创建任务并保持 idle",
+      "passed": true
+    },
+    {
+      "name": "编辑和手动移动任务不会启动 AI",
+      "passed": true
+    },
+    {
+      "name": "运行请求被 403 拒绝，事件记录为空",
+      "passed": true
+    },
+    {
+      "name": "仅停止自己的测试启动器与子进程",
+      "passed": true
+    },
+    {
+      "name": "重启同一隔离数据库，任务内容与 idle 状态保留",
+      "passed": true
+    },
+    {
+      "name": "迁移前备份存在且 SQLite 快照可读取任务",
+      "passed": true
+    }
+  ],
+  "cleanup": "测试进程已停止，临时测试数据已清理。",
+  "finishedAt": "2026-10-18T19:48:56.516Z"
+}

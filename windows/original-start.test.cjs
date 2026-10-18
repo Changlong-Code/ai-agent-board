@@ -45,3 +45,18 @@ test('pre-migration backup awaits SQLite backup and closes read-only connection 
   await assert.rejects(backupDatabase(BrokenDatabase, dir), /backup failed/); assert.equal(closed, true);
   assert.equal(fs.readFileSync(path.join(dir, 'data/agentboard.db'), 'utf8'), 'sentinel');
 });
+
+test('unfinished restore marker blocks startup before touching valid config or database', t => {
+  const dir = temp(t);
+  const marker = path.join(dir, 'restore-in-progress.json');
+  fs.writeFileSync(marker, '{"phase":"data-renamed"}');
+  const config = JSON.stringify({ cloneRoot: path.join(dir, 'projects') });
+  fs.writeFileSync(path.join(dir, 'config.json'), config);
+  fs.mkdirSync(path.join(dir, 'data'));
+  fs.writeFileSync(path.join(dir, 'data', 'agentboard.db'), 'unchanged-database');
+  assert.throws(() => validateConfig(dir), /unfinished restore marker/);
+  assert.equal(fs.readFileSync(marker, 'utf8'), '{"phase":"data-renamed"}');
+  assert.equal(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'), config);
+  assert.equal(fs.readFileSync(path.join(dir, 'data', 'agentboard.db'), 'utf8'), 'unchanged-database');
+  assert.equal(fs.readdirSync(dir).filter(file => file.includes('.invalid-')).length, 0);
+});

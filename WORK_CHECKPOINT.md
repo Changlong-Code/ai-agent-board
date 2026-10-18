@@ -101,3 +101,12 @@ Windows10 1909 实机、原生模块Windows加载、CMD浏览器打开和Windows
 3. 用户电脑先Setup-Original-Board.cmd，再Diagnose-Original-Board.cmd，后Start-Original-Board.cmd（8776/8777）；已有独立0.2.x服务保持分离，不占8765/8766。
 4. 收集目标实机诊断与原版看板CRUD/重启/备份结果，完成M1/M2；再推进M3授权隔离和M4真实CLI示例验证。
 本断点保存后暂停开发，不自动启动后续阶段或AI任务。
+
+
+## 2026-10-18：原版 M2 诊断、自检和受控恢复增量
+
+从 174bd6b81a5eaaf628ed667281d4e6088b23f9c3 继续，新增 Verify/Backup/Restore CMD；诊断自动导出脱敏中文报告。隔离自检内部 9 项通过且重复验证，受控恢复要求快照 ID、恢复前安全备份、失败回滚，恢复中断标记阻止启动。当前损坏数据库不能用此工具直接覆盖修复。
+
+最终独立专项 23/23（备份11、诊断4、启动器7、自检1）通过；完整 required gate 退出0：服务86/86、Hermes3/3、构建通过、E2E180通过/4项既有真实Agent跳过。另有实际 React 浏览器交互复测，详见 windows/ORIGINAL_M2_TEST_REPORT.md 和 ORIGINAL_REVIEW.md。未调用真实AI或读取用户项目。
+
+下一步：目标电脑运行 Setup → Diagnose → Verify → Start；正常停止后演练 Backup/Restore。Windows1909、CMD和Windows进程生命周期未验证，M1/M2仍待实机；随后推进M3授权隔离与M4示例CLI接入。上方暂停文字是历史记录，本批用户已要求继续。

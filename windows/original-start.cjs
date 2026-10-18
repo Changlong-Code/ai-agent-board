@@ -44,6 +44,9 @@ function isolatedEnv(home, ports, source = process.env) {
   });
 }
 function validateConfig(home) {
+  if (fs.existsSync(path.join(home, 'restore-in-progress.json'))) {
+    throw new Error('An unfinished restore marker exists: restore-in-progress.json. Startup is blocked. Preserve the data and inspect the recovery marker before manual recovery; do not reset it automatically.');
+  }
   const file = path.join(home, 'config.json');
   if (!fs.existsSync(file)) return;
   try {
@@ -109,13 +112,16 @@ async function main() {
       child.once('close', () => { clearTimeout(timer); resolve(); });
     })));
     for (const stream of streams) stream.end();
-    unlock(); process.exitCode = code;
+    unlock(); if (process.connected) process.disconnect(); process.exitCode = code;
   }
   try {
     validateConfig(home);
     if (fs.existsSync(path.join(home, '.dotenv-disabled'))) throw new Error('Remove the unexpected .dotenv-disabled file from the data home before startup.');
     const backup = await backupDatabase(Database, home);
     process.on('SIGINT', () => void stop(0)); process.on('SIGTERM', () => void stop(0));
+    if (process.send) process.on('message', message => {
+      if (message && message.type === 'original-board-stop') void stop(0);
+    });
     if (stopping) return;
     console.log(`Data: ${home}${backup ? `\nBackup: ${backup}` : ''}`);
     fs.mkdirSync(path.join(home, 'logs'), { recursive: true });

@@ -1,0 +1,39 @@
+✔ home matches launcher and honors explicit override (1.131465ms)
+✔ snapshot includes committed WAL, uploads and config only; preview never modifies data (29.814373ms)
+✔ hash mismatch, extra file and traversal rejected (35.504558ms)
+✔ live lock excludes backup and preview without deleting owner lock (10.805778ms)
+✔ symlink source and snapshot file refused (14.661754ms)
+✔ corrupt existing DB preserved and config secrets rejected (6.716901ms)
+✔ apply requires exact confirmation; restores with safety backup and preserved previous files (19.159192ms)
+✔ apply rollback after partial install restores original DB/config/uploads and retains all files (22.460597ms)
+✔ apply refuses corrupt current DB before moving it (13.960529ms)
+✔ rehashed unsupported config and Windows aliases are rejected (13.879622ms)
+✔ failed checks still save unique Chinese and JSON reports without modifying damaged config (5.104757ms)
+✔ valid config secrets and cloneRoot omitted while success report gives actionable next step (2.10308ms)
+✔ no existing home is created by checks, report directory override is honored (1.184224ms)
+✔ CLI saves failure reports and exits with diagnostic summary code (93.133088ms)
+[通过] 隔离临时目录、动态端口启动原版
+[通过] 健康检查：Agent 执行明确禁用
+[通过] 原版 React 首页静态资源返回 200
+[通过] 创建任务并保持 idle
+[通过] 编辑和手动移动任务不会启动 AI
+[通过] 运行请求被 403 拒绝，事件记录为空
+[通过] 仅停止自己的测试启动器与子进程
+[通过] 重启同一隔离数据库，任务内容与 idle 状态保留
+[通过] 迁移前备份存在且 SQLite 快照可读取任务
+报告已保存：/tmp/original-selftest-report-NNRHb6
+✔ selftest exercises original launcher with IPC shutdown, restart and readable SQLite backup (1332.501207ms)
+✔ preflight rejects unsupported Node and invalid or conflicting ports (2.612844ms)
+✔ launcher home lock is exclusive and never unlocks another owner (1.469121ms)
+✔ invalid configuration is preserved and refuses startup (0.809973ms)
+✔ isolated environment overrides inherited execution, database and dotenv configuration (0.415823ms)
+✔ occupied port is rejected without touching its service (9.305972ms)
+✔ pre-migration backup awaits SQLite backup and closes read-only connection on failure (1.86253ms)
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1424.712307

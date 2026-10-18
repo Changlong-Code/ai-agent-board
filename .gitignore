@@ -161,3 +161,7 @@ packages/e2e/test-results-old/
 .squad/.scratch/
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream
+
+# Original Windows diagnostic/self-test reports (local machine data)
+/reports/
+/windows/qa-reports/
