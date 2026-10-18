@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-18T10:06:16.935Z",
+  "browser": "153.0.8010.0",
+  "environment": "Linux Chromium localhost, fake provider adapter only; no live AI",
+  "passed": [
+    "project/task create",
+    "invalid path error",
+    "project directory link/root filenames",
+    "detect does not execute",
+    "explicit run passes provider/path/prompt",
+    "literal output safe",
+    "confirm append preserves status",
+    "completed history reload",
+    "single run refusal",
+    "token failure403",
+    "running history reload and stop",
+    "non-subscription rejected",
+    "zero JS errors/external requests"
+  ]
+}
