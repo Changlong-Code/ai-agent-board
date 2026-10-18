@@ -75,3 +75,29 @@ Chromium和headless-shell安装均失败：下载内容不是有效zip。后续�
 
 ## 2026-10-18：0.2.1 用户端口冲突修复
 用户确认8765由另一个项目使用。本看板默认改用8766，支持根目录PORT.txt和AGENTBOARD_PORT覆盖，统一监听与浏览器URL；不终止或复用其他项目。CMD设置UTF-8避免中文乱码。18项后端/启动器测试通过，覆盖保留8765外部服务同时启动看板、目标端口冲突、自定义8877、非法端口拒绝。Windows端仍需用户重试；本修复不代表真实AI接入已验收。
+
+## 2026-10-18 断点：原项目 M1/M2（用户要求“启动断点”，已暂停）
+
+### 本批明确范围
+按 WINDOWS_PLAN.md 回归原版 React/Express/SQLite；0.1.x/0.2.x独立伴随版本仅保留历史，不作为原项目M2完成证据。未运行真实AI、未读写用户业务项目、未改变系统。
+
+### 已保存实现
+- Start-Original-Board.cmd、Setup-Original-Board.cmd、Diagnose-Original-Board.cmd；原版页面8776、API8777，ORIGINAL_PORTS.json可配。
+- windows/original-start.cjs：原版构建启动、隔离cwd/DB/配置/附件/日志、Node/SQLite预检、独占锁、迁移前SQLite backup（含WAL）、损坏配置保留、健康检查、只停止自有进程。
+- windows/original-setup.cjs与original-vite.config.mjs：不把源.env认证值带入基础版构建/运行；AI禁用，不接真实Postgres。
+- 原版config.ts：无效配置不覆盖；windows-local.ts+index.ts：Windows基础模式限定本地Host/Origin。
+- 诊断报告仅检查运行环境、SQLite内存查询、构建、端口与脱敏配置，不运行Provider。
+
+### 真实验证结果
+完整 npm run gate:required 退出0：服务端86/86、Hermes3/3、前后端构建通过、实际Chromium E2E180通过/4项既有真实Agent集成跳过，无新增跳过。日志 windows/original-required-gate.log。
+独立启动器6项、配置3项、本地访问2项定向测试通过。实际原版启动器+React浏览器验证中文/空格数据目录、创建/编辑/拖动、AI403拒绝且无事件、重启SQLite持久化、迁移前备份存在、删除通过。证据windows/original-ui-results.json。独立安全审查windows/ORIGINAL_REVIEW.md。
+
+### 尚未完成
+Windows10 1909 实机、原生模块Windows加载、CMD浏览器打开和Windows进程停止未验证；M1/M2仍进行中。4项真实Agent集成未运行，不代表M4通过。Agent依赖仍由原版npm安装，未完全裁剪。官方Node22/24平台表不替代1909实测，且官方另有平台生命周期限制。
+
+### 下次恢复
+1. 读取本检查点、WINDOWS_PLAN.md、M1_TASKS.md、ORIGINAL_WINDOWS_README_CN.md与windows/ORIGINAL_REVIEW.md。
+2. 对照GitHub windows-m1最新HEAD，不回退覆盖后续提交；包不包含node_modules或用户数据。
+3. 用户电脑先Setup-Original-Board.cmd，再Diagnose-Original-Board.cmd，后Start-Original-Board.cmd（8776/8777）；已有独立0.2.x服务保持分离，不占8765/8766。
+4. 收集目标实机诊断与原版看板CRUD/重启/备份结果，完成M1/M2；再推进M3授权隔离和M4真实CLI示例验证。
+本断点保存后暂停开发，不自动启动后续阶段或AI任务。

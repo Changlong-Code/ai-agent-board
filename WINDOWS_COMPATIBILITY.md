@@ -1,7 +1,7 @@
 # M1 Windows 兼容性初步报告
 日期：2026-10-11
 分析基线：a5c7560859c18525e3a625900393bf8d3503b2fc（windows-m1）
-状态：进行中；仅静态检查，未安装依赖、未运行软件、未做 Windows 10 1909 实机测试。
+当前状态：原项目已在Linux安装并运行、完整门禁通过；Windows1909仍未实机测试。下文2026-10-11段落是历史快照，最新进度见本文件末尾及WORK_CHECKPOINT.md。
 
 ## 已核对文件
 package.json、package-lock.json、packages/client/package.json、packages/server/package.json、packages/client/vite.config.ts、packages/server/src/index.ts、packages/server/src/services/agent-detection.ts。
@@ -82,3 +82,11 @@ M1 保持进行中：完整命令路径审计、原生依赖验证和目标实�
 ## M2 基础模式第一批实现
 2026-10-11：默认禁止Agent执行；初始化/刷新延迟加载SDK；路由和运行时统一拒绝；基础模式跳过启动worktree清理、pending恢复和orphan状态改写。统一策略见 execution-policy.ts。
 当前Linux Node24.19.0：npm ci成功；前后端构建通过；服务端81项测试通过。required gate浏览器验收失败，Chromium下载为无效zip，未取得UI通过证据。Windows1909未验，M1/M2均不标完成。
+
+## 2026-10-18 原项目实测与官方来源更新
+
+Linux Node24.19当前锁定依赖npmci成功，SQLite加载/读写、React/服务构建、原版完整门禁及启动器浏览器验证通过。详见原版断点和windows/original-required-gate.log。不能推导Windows1909通过。
+
+官方Node22.x与24.x BUILDING.md已读取：Windows x64平台表列Windows10/Server2016起；文档同时排除厂商已结束支持的平台版本。不可只凭“Windows10”表项承诺1909仍在官方支持范围。此处记录事实和待验项，不改变用户“不升级系统”的约束，不自动降级或安装其他运行时。
+
+来源：https://github.com/nodejs/node/blob/v22.x/BUILDING.md ；https://github.com/nodejs/node/blob/v24.x/BUILDING.md 。

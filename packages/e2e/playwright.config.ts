@@ -14,6 +14,9 @@ export default defineConfig({
   reporter: 'list',
   timeout: 30_000,
   use: {
+    launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+      : undefined,
     baseURL: `http://localhost:${TEST_CLIENT_PORT}`,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',

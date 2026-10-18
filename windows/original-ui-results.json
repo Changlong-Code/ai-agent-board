@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-18T10:22:55.488Z",
+  "browser": "153.0.8010.0",
+  "environment": "Linux actual original launcher + React UI; Windows1909 unverified",
+  "passed": [
+    "isolated Chinese/spaced home launch",
+    "React create/edit project path task",
+    "real drag status without Agent execution",
+    "explicit Agent403 no events disabled detection",
+    "stop restart persistent SQLite",
+    "restart backup exists",
+    "task deletion"
+  ]
+}

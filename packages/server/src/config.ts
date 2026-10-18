@@ -2,7 +2,6 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { ProjectConfig } from './types.js';
-import { errorMessage } from './utils.js';
 
 /**
  * Agent Board persists its server-side configuration in a JSON file at a fixed
@@ -61,15 +60,21 @@ export function loadConfig(): ProjectConfig {
   let config = defaultConfig();
   if (fs.existsSync(configPath)) {
     try {
-      const raw = JSON.parse(fs.readFileSync(configPath, 'utf8')) as Partial<ProjectConfig>;
-      if (raw && typeof raw.cloneRoot === 'string' && raw.cloneRoot.trim()) {
-        config = { cloneRoot: path.resolve(expandTilde(raw.cloneRoot.trim())) };
-      } else {
-        writeConfig(config);
+      const raw: unknown = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
+          !('cloneRoot' in raw) || typeof raw.cloneRoot !== 'string' ||
+          !raw.cloneRoot.trim() || raw.cloneRoot.includes('\0')) {
+        throw new Error('Invalid cloneRoot');
       }
-    } catch (err) {
-      console.warn(`[config] failed to read ${configPath}, using defaults: ${errorMessage(err)}`);
-      writeConfig(config);
+      config = { cloneRoot: path.resolve(expandTilde(raw.cloneRoot.trim())) };
+    } catch {
+      // Existing configuration is user data. Never silently replace a damaged
+      // file with defaults or redirect later project operations to a new root.
+      throw new Error(
+        `Cannot load Agent Board configuration at ${configPath}. ` +
+        'The original file was preserved. Restore a valid JSON object with a ' +
+        'non-empty cloneRoot directory path from your backup, then restart.',
+      );
     }
   } else {
     writeConfig(config);

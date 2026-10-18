@@ -19,6 +19,7 @@ import { createOrchestrationsRouter } from './routes/orchestrations.js';
 import type { AttachmentStore } from './repositories/attachment-types.js';
 import { AgentManager } from './services/agent-manager.js';
 import { authMiddleware } from './middleware/auth.js';
+import { createWindowsLocalGuard } from './middleware/windows-local.js';
 import type { TaskRepository } from './repositories/types.js';
 import type { TemplateRepository } from './repositories/template-types.js';
 import type { TaskGroupRepository } from './repositories/group-types.js';
@@ -30,6 +31,12 @@ import { reconcileManagedWorktrees } from './services/worktree-cleanup.js';
 const app = express();
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const HOST = process.env.HOST?.trim() || '127.0.0.1';
+
+app.use(createWindowsLocalGuard({
+  enabled: process.env.AGENTBOARD_WINDOWS_BASIC === '1',
+  apiPort: PORT,
+  uiPort: Number(process.env.AGENTBOARD_UI_PORT || '8776'),
+}));
 
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:8081,http://localhost:4175,http://localhost:4176').split(',');
 app.use(cors({ origin: ALLOWED_ORIGINS }));
