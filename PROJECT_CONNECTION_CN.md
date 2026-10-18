@@ -1,4 +1,4 @@
-# AI Agent Board 项目接入版 0.2.0
+# AI Agent Board 项目接入版 0.2.1
 
 ## 这版能接什么
 
@@ -10,7 +10,7 @@
 
 1. 完整解压到固定目录。
 2. 双击根目录 `Start-Connected-Board.cmd`。
-3. 浏览器会打开 `http://127.0.0.1:8765`。保持启动窗口开启，按 Ctrl+C 正常停止。
+3. 浏览器会打开 `http://127.0.0.1:8766`。保持启动窗口开启，按 Ctrl+C 正常停止。
 
 本机需要 **能实际运行的 Node.js 22.12 或更新版本**，本包不包含 Node，也不执行自动安装。项目连接服务本身零 npm 依赖，不需运行 npm install，不需 SQLite 编译工具。
 
@@ -71,3 +71,7 @@ Codex需要支持 `--ignore-user-config`、`--ignore-rules`、`--sandbox`。Clau
 连接服务与UI使用隔离示例目录、模拟Provider测试，不调用你的真实账号或业务项目。实际CLI帮助参数另做无模型调用的兼容性核对；真实订阅认证、真实项目分析、Windows1909、CMD和进程树终止仍需目标电脑验证。
 
 当前实现不代表M1–M6全部完成。测试细节见 local/TEST_REPORT.md，续开发记录见 WORK_CHECKPOINT.md。
+
+## 0.2.1 端口修复
+
+默认端口改为8766，保留用户另一个项目使用的8765。根目录 PORT.txt 可直接修改端口；AGENTBOARD_PORT 环境变量优先。监听地址、自动浏览器地址、Host/Origin验证使用同一端口。端口被占用时不终止其他软件。CMD改用UTF-8显示中文。浏览器存储按端口隔离，旧看板如有任务，先导出再在新地址导入。
