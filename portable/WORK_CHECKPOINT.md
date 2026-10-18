@@ -51,3 +51,13 @@ Chromium和headless-shell安装均失败：下载内容不是有效zip。后续�
 - 原项目 required gate 仍无完整通过证据；Windows 1909 与 CMD 实机验证仍待完成。M1/M2 未完成，M3–M6 未完成。
 - 恢复入口：读取 WINDOWS_PLAN.md、本检查点、portable/使用说明.md 和 portable/TEST_REPORT.md；先验证目标电脑离线版，再推进原项目基础模式启动器与完整 gate。
 
+
+## 2026-10-18：离线基础版 0.1.2 完善
+- 从 c86d2ac9280833583b356830b93f78b808a7db79 继续，保留 schemaVersion=1 与 agentboard-portable-v1 存储键，支持导入0.1.1备份。
+- 新增上一版整体恢复/撤销（验证与确认）、上一版下载、损坏当前版本时恢复有效上一版；不是多级历史。
+- 新增任务复制到活动待办、项目完成数/完成率/归档统计、清除筛选、未保存表单取消/Esc确认、保存错误弹窗内反馈。
+- 新增手动AI交接：根据任务生成说明，用户复制后自己打开AI网页、粘贴发送；不自动传输、不读取账号、不运行CLI、不调用API。不作为M4集成完成。
+- 当前实际Chromium153 file:// 浏览器18组测试通过；独立静态安全审查通过。最终CSS修正按钮自动换行，交付前另做边界检查。证据见portable/TEST_REPORT.md与browser-test-results.json。
+- 升级方式：旧版导出JSON，新版导入；不要无备份移动HTML或清理浏览器存储。
+- 原项目完整required gate、Windows1909/CMD实机、原版服务启动器与M3–M6仍未完成；本批没有修改原版客户端/服务端。下一步继续原版启动器与隔离数据目录，离线版仅作为可用先行版本。
+

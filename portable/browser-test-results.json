@@ -1,6 +1,6 @@
 {
-  "date": "2026-10-18T09:29:02.009Z",
-  "passed": 11,
+  "date": "2026-10-18T09:49:23.289Z",
+  "passed": 18,
   "browser": "153.0.8010.0",
   "environment": "Linux Chromium file://; Windows 10 1909 not tested",
   "tests": [
@@ -14,6 +14,13 @@
     "second tab modification blocks stale import and writes",
     "clear storage event blocks stale import",
     "corrupt data preserved and recovery backup retained",
+    "v011 schema1 import remains compatible",
+    "duplicate task has unique id and returns to backlog",
+    "summary ignores filters and reset clears both filters",
+    "manual AI handoff contains project title description without sending",
+    "unsaved cancel decline preserves input and Escape asks confirmation",
+    "undo previous operation and download prior snapshot",
+    "restore valid previous snapshot when current is corrupt",
     "no JavaScript errors or external requests"
   ]
 }
