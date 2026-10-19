@@ -53,7 +53,7 @@ test('Windows Copilot detection falls back to copilot.exe on PATH', async (t) =>
   assert.equal(copilot?.reason, undefined);
 });
 
-test('Windows Copilot detection keeps SDK unavailable reason when copilot.exe is absent', async () => {
+test('Windows Copilot detection reports a concise reason when copilot.exe is absent', async () => {
   const agents = await detectAvailableAgents({
     detectAgents: async () => agentsWithCopilot(),
     env: { PATH: path.join(process.cwd(), 'test-results', 'agent-detection', 'missing') },
@@ -62,8 +62,7 @@ test('Windows Copilot detection keeps SDK unavailable reason when copilot.exe is
 
   const copilot = agents.find(agent => agent.name === 'copilot');
   assert.equal(copilot?.available, false);
-  assert.match(copilot?.reason ?? '', /Windows PATH discovery/);
-  assert.match(copilot?.reason ?? '', /SDK probe: Copilot CLI not found in PATH/);
+  assert.equal(copilot?.reason, 'Copilot CLI not found in PATH');
 });
 
 test('Windows Copilot detection uses where.exe discovery before overriding availability', async () => {
@@ -203,11 +202,7 @@ test('Windows Copilot detection reports explicit health probe failures distinctl
 
   const copilot = agents.find(agent => agent.name === 'copilot');
   assert.equal(copilot?.available, false);
-  assert.match(copilot?.reason ?? '', /explicit health probes failed/);
-  assert.match(copilot?.reason ?? '', /--version/);
-  assert.match(copilot?.reason ?? '', /version/);
-  assert.match(copilot?.reason ?? '', /--help/);
-  assert.match(copilot?.reason ?? '', /SDK probe: Copilot CLI not found in PATH/);
+  assert.equal(copilot?.reason, 'Copilot CLI found, but the health check failed');
 });
 
 test('Windows Copilot detection preserves SDK availability without extra probes', async () => {

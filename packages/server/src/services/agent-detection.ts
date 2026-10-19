@@ -212,10 +212,6 @@ function copilotProbeVersion(result: CommandProbeResult): string | undefined {
   return firstOutputLine(`${result.stdout}\n${result.stderr}`);
 }
 
-function appendSdkReason(reason: string, sdkReason?: string): string {
-  return sdkReason ? `${reason} SDK probe: ${sdkReason}` : reason;
-}
-
 async function normalizeConfiguredHermesAvailability(
   agents: AgentInfo[],
   execCommand: ExecCommand,

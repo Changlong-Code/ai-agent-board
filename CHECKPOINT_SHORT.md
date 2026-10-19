@@ -56,3 +56,12 @@ Setup-Original-Board.cmd → Diagnose-Original-Board.cmd → Verify-Original-Boa
 - 保留现有 Local Path 与 GitHub URL 导入流程。
 - 本轮修改：shared/types.ts、packages/server/src/routes/projects.ts、packages/client/src/components/ProjectDialog.tsx。
 - 尚未在用户 Windows 10 1909 机器重新执行 Setup/build；下一步只做这一项实机编译与 New Project 冒烟测试。
+
+
+## 2026-10-20 Windows Setup 编译错误修复
+- 删除 agent-detection.ts 中无引用的 appendSdkReason，修复 TS6133 导致的服务端构建失败。
+- 保留现有 Windows Codex/Copilot 检测逻辑；同步两处旧版错误文案测试期望。
+- 验证：build:shared、build:server、build:client 均通过；agent-detection.test.ts 12/12 通过。
+- 验证环境为 Linux；Windows 实机 Setup/Start 尚待更新后复测。
+- 修改文件：packages/server/src/services/agent-detection.ts、packages/server/tests/agent-detection.test.ts、本短检查点。
+- 下一步：本机拉取 windows-m1 最新提交，重新运行 Setup-Original-Board.cmd。
