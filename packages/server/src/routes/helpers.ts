@@ -1,7 +1,7 @@
 import { isAgentExecutionEnabled, assertAgentExecutionEnabled, AgentExecutionDisabledError } from '../services/execution-policy.js';
 import { Request, Response, NextFunction } from 'express';
 import { v4 as uuid } from 'uuid';
-import { execFile, execFileSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -41,35 +41,35 @@ export function paramId(req: Request): string {
 
 // ─── Git ref validation ─────────────────────────────────────────────
 
-const GIT_REF_RE = /^[\p{L}\p{N}_][\p{L}\p{N}._/-]*$/u;
+const GIT_REF_RE = /^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$/;
 export function isValidGitRef(ref: string): boolean {
-  if (!ref || ref.length > 200 || !GIT_REF_RE.test(ref)) return false;
-  if (ref.startsWith('/') || ref.endsWith('/') || ref.includes('//')) return false;
-  if (ref.includes('..') || ref.includes('@{') || ref.endsWith('.')) return false;
-  const segments = ref.split('/');
-  return segments.every((segment) =>
-    Boolean(segment)
-    && !segment.startsWith('.')
-    && !segment.endsWith('.lock')
-  );
+  return GIT_REF_RE.test(ref) && !ref.includes('..') && !ref.endsWith('.lock') && ref.length <= 200;
 }
 
+
 /**
- * Build a Git-safe task branch. Unicode letters/numbers are preserved so
- * Chinese task titles do not collapse to the invalid branch "task/".
- * If a title has no usable letters/numbers (for example emoji only), use
- * a deterministic task-id suffix as the fallback.
+ * Create an ASCII-only, Git-safe branch name.
+ * Non-ASCII-only titles (for example Chinese) are encoded by Unicode code point
+ * so they never collapse to the invalid branch name "task/".
  */
 export function makeTaskBranchName(title: string, taskId = 'change'): string {
-  const slug = title
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
+  const normalized = title.normalize('NFKC').trim().toLowerCase();
+  const ascii = normalized
+    .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 60)
+    .slice(0, 56);
+
+  if (ascii) return `task/${ascii}`;
+
+  const encoded = Array.from(normalized)
+    .map((char) => char.codePointAt(0)?.toString(16) || '')
+    .filter(Boolean)
+    .join('-')
+    .slice(0, 52)
     .replace(/-+$/g, '');
+
   const fallback = taskId.replace(/[^a-zA-Z0-9]+/g, '').slice(0, 8) || 'change';
-  return `task/${slug || `task-${fallback}`}`;
+  return `task/${encoded ? `u-${encoded}` : `task-${fallback}`}`;
 }
 
 // ─── Repo-path validation ───────────────────────────────────────────
@@ -401,60 +401,11 @@ export function getGitRemoteOrigin(repoPath: string): string | null {
  * interactive credential prompts so private repos without ambient credentials
  * fail fast instead of hanging.
  */
-function execGitAsync(args: string[], timeoutMs: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    execFile('git', args, {
-      timeout: timeoutMs,
-      maxBuffer: 10 * 1024 * 1024,
-      env: {
-        ...process.env,
-        GIT_TERMINAL_PROMPT: '0',
-        GCM_INTERACTIVE: 'Never',
-      },
-    }, (error, _stdout, stderr) => {
-      if (!error) {
-        resolve();
-        return;
-      }
-      const detail = stderr?.toString().trim();
-      const wrapped = new Error(detail || error.message) as Error & { code?: string | number; killed?: boolean };
-      wrapped.code = (error as NodeJS.ErrnoException).code;
-      wrapped.killed = Boolean((error as Error & { killed?: boolean }).killed);
-      reject(wrapped);
-    });
-  });
-}
-
-/**
- * Clone a repository without blocking the Node event loop.
- * A short ls-remote preflight makes missing/private-repo credentials fail fast
- * instead of leaving the UI on "Cloning..." for the full clone timeout.
- */
-export async function cloneRepoAsync(repoUrl: string, targetPath: string, timeoutMs = 120_000): Promise<void> {
-  try {
-    await execGitAsync(['ls-remote', '--exit-code', '--', repoUrl], Math.min(timeoutMs, 20_000));
-  } catch (err: unknown) {
-    const message = errorMessage(err);
-    throw new Error(
-      `Cannot access repository before clone: ${message}. ` +
-      'For private GitHub repos, authenticate Git/Git Credential Manager first and retry.',
-    );
-  }
-
-  try {
-    await execGitAsync(['clone', '--', repoUrl, targetPath], timeoutMs);
-  } catch (err: unknown) {
-    const message = errorMessage(err);
-    throw new Error(`git clone failed: ${message}`);
-  }
-}
-
-/** @deprecated Prefer cloneRepoAsync so clone/auth failures do not block the server event loop. */
 export function cloneRepo(repoUrl: string, targetPath: string, timeoutMs = 120_000): void {
   execFileSync('git', ['clone', '--', repoUrl, targetPath], {
     stdio: 'pipe',
     timeout: timeoutMs,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never' },
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
   });
 }
 
