@@ -7,7 +7,7 @@ import { PRIORITY_OPTIONS } from '@/lib/priority-config';
 import type { AgentType, CreateProjectRequest, Priority, Project, ProjectPathValidation, UpdateProjectRequest } from '@/types';
 
 export interface ProjectDialogInitialValues {
-  source?: 'local' | 'repo';
+  source?: 'new' | 'local' | 'repo';
   name?: string;
   repoUrl?: string;
   repoPath?: string;
@@ -57,7 +57,7 @@ export function ProjectDialog({
   onSelectDirectory,
 }: ProjectDialogProps) {
   const mode = project ? 'edit' : 'create';
-  const [sourceType, setSourceType] = useState<'local' | 'repo'>('local');
+  const [sourceType, setSourceType] = useState<'new' | 'local' | 'repo'>('new');
   const [name, setName] = useState('');
   const [repoPath, setRepoPath] = useState('');
   const [repoUrl, setRepoUrl] = useState('');
@@ -71,10 +71,12 @@ export function ProjectDialog({
   const [submitting, setSubmitting] = useState(false);
   const [selectingDirectory, setSelectingDirectory] = useState(false);
   const [autoSubmitPending, setAutoSubmitPending] = useState(false);
+  const [createGitHub, setCreateGitHub] = useState(false);
+  const [githubVisibility, setGithubVisibility] = useState<'private' | 'public'>('private');
 
   useEffect(() => {
     if (!open) return;
-    setSourceType(initialValues?.source ?? (project?.repoUrl ? 'repo' : 'local'));
+    setSourceType(initialValues?.source ?? (project?.repoUrl ? 'repo' : project ? 'local' : 'new'));
     setName(project?.name ?? initialValues?.name ?? '');
     setRepoPath(project?.repoPath ?? initialValues?.repoPath ?? '');
     setRepoUrl(project?.repoUrl ?? initialValues?.repoUrl ?? '');
@@ -93,6 +95,8 @@ export function ProjectDialog({
     setSelectingDirectory(false);
     // Defer auto-submit to a later render so the prefilled state above is applied first.
     setAutoSubmitPending(!project && Boolean(initialValues?.autoSubmit));
+    setCreateGitHub(false);
+    setGithubVisibility('private');
   }, [open, project, initialValues]);
 
   async function validatePath(value: string): Promise<boolean> {
@@ -130,10 +134,16 @@ export function ProjectDialog({
     const trimmedPath = repoPath.trim();
     const trimmedUrl = repoUrl.trim();
     const usingRepo = mode === 'create' && sourceType === 'repo';
+    const creatingNew = mode === 'create' && sourceType === 'new';
 
     if (usingRepo) {
       if (!trimmedUrl) {
         setError('Repository URL is required');
+        return;
+      }
+    } else if (creatingNew) {
+      if (!trimmedName) {
+        setError('Project Name is required');
         return;
       }
     } else if (mode === 'create') {
@@ -146,7 +156,7 @@ export function ProjectDialog({
       return;
     }
 
-    if (!usingRepo) {
+    if (!usingRepo && !creatingNew) {
       const pathValid = await validatePath(trimmedPath);
       if (!pathValid) {
         setError('Fix the Local Path before saving');
@@ -185,6 +195,14 @@ export function ProjectDialog({
         payload = {
           name: trimmedName || undefined,
           repoUrl: trimmedUrl,
+          ...defaults,
+        };
+      } else if (creatingNew) {
+        payload = {
+          name: trimmedName,
+          createNew: true,
+          createGitHub,
+          githubVisibility,
           ...defaults,
         };
       } else {
@@ -280,7 +298,22 @@ export function ProjectDialog({
               {mode === 'create' && (
                 <div>
                   <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Project Source</span>
-                  <div role="radiogroup" aria-label="Project Source" className="grid grid-cols-2 gap-2">
+                  <div role="radiogroup" aria-label="Project Source" className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={sourceType === 'new'}
+                      onClick={() => { setSourceType('new'); setError(''); }}
+                      className={[
+                        'flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                        sourceType === 'new'
+                          ? 'border-primary bg-primary/10 text-foreground'
+                          : 'border-border text-muted-foreground hover:bg-accent',
+                      ].join(' ')}
+                    >
+                      <FolderOpen className="h-4 w-4" />
+                      New Project
+                    </button>
                     <button
                       type="button"
                       role="radio"
@@ -394,6 +427,28 @@ export function ProjectDialog({
                 </div>
               )}
 
+              {mode === 'create' && sourceType === 'new' && (
+                <div className="space-y-3 rounded-lg border border-border/60 bg-background/40 p-4">
+                  <p className="text-xs text-muted-foreground">
+                    Board creates the folder under the configured clone root, initializes Git, creates main, README.md and the first commit.
+                  </p>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={createGitHub} onChange={(e) => setCreateGitHub(e.target.checked)} />
+                    Also create a GitHub repository
+                  </label>
+                  {createGitHub && (
+                    <select
+                      value={githubVisibility}
+                      onChange={(e) => setGithubVisibility(e.target.value as 'private' | 'public')}
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      <option value="private">Private</option>
+                      <option value="public">Public</option>
+                    </select>
+                  )}
+                </div>
+              )}
+
               {error && (
                 <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
                   {error}
@@ -486,7 +541,7 @@ export function ProjectDialog({
                   className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {submitting
-                    ? (mode === 'edit' ? 'Saving…' : (sourceType === 'repo' ? 'Cloning…' : 'Creating…'))
+                    ? (mode === 'edit' ? 'Saving…' : (sourceType === 'repo' ? 'Cloning…' : sourceType === 'new' ? 'Creating Git Project…' : 'Creating…'))
                     : (mode === 'edit' ? 'Save Changes' : 'Create Project')}
                 </button>
               </div>
