@@ -27,7 +27,7 @@ function readPorts(root = ROOT, env = process.env) {
   if (boardPort === apiPort) throw new Error('Board and API ports must differ.');
   return { boardPort, apiPort };
 }
-function isolatedEnv(home, ports, source = process.env) {
+function isolatedEnv(home, ports, source = process.env, enableAgents = false) {
   const env = { ...source };
   for (const key of Object.keys(env)) {
     if (/^(NODE_OPTIONS|DOTENV_CONFIG_|VITE_|OPENAI_|ANTHROPIC_|DATABASE_URL$|API_KEY$|AGENTBOARD_)/i.test(key)) delete env[key];
@@ -35,7 +35,8 @@ function isolatedEnv(home, ports, source = process.env) {
   return Object.assign(env, {
     NODE_OPTIONS: '', DOTENV_CONFIG_PATH: path.join(home, '.dotenv-disabled'), DOTENV_CONFIG_OVERRIDE: '',
     DATABASE_URL: '', API_KEY: '', VITE_API_KEY: '',
-    AGENTBOARD_ENABLE_AGENT_EXECUTION: '0', AGENTBOARD_DISABLE_AGENT_STARTUP: '1',
+    AGENTBOARD_ENABLE_AGENT_EXECUTION: enableAgents ? '1' : '0',
+    AGENTBOARD_DISABLE_AGENT_STARTUP: enableAgents ? '0' : '1',
     AGENTBOARD_WINDOWS_BASIC: '1', AGENTBOARD_UI_PORT: String(ports.boardPort),
     AGENTBOARD_HOME: home, DB_PATH: path.join(home, 'data', 'agentboard.db'),
     HOST: '127.0.0.1', PORT: String(ports.apiPort), ORIGINAL_BOARD_PORT: String(ports.boardPort),
@@ -92,6 +93,7 @@ function request(url) {
 async function main() {
   checkNode();
   const ports = readPorts();
+  const enableAgents = process.env.ORIGINAL_ENABLE_AGENT_EXECUTION === '1';
   const home = path.resolve(process.env.ORIGINAL_BOARD_HOME || path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'AI-Agent-Board', 'original-basic'));
   const server = path.join(ROOT, 'packages/server/dist/index.js');
   for (const file of [server, path.join(ROOT, 'packages/client/dist/index.html'), path.join(ROOT, 'shared/dist/constants.js')]) {
@@ -125,7 +127,7 @@ async function main() {
     if (stopping) return;
     console.log(`Data: ${home}${backup ? `\nBackup: ${backup}` : ''}`);
     fs.mkdirSync(path.join(home, 'logs'), { recursive: true });
-    const env = isolatedEnv(home, ports);
+    const env = isolatedEnv(home, ports, process.env, enableAgents);
     function run(name, args) {
       const output = fs.createWriteStream(path.join(home, 'logs', `${name}.log`), { flags: 'a' }); streams.push(output);
       output.on('error', error => { console.error(`Cannot write ${name} log: ${error.message}`); void stop(1); });
@@ -141,12 +143,12 @@ async function main() {
     for (let attempt = 0; attempt < 90 && !stopping; attempt++) {
       try {
         const [api, client] = await Promise.all([request(`http://127.0.0.1:${ports.apiPort}/api/health`), request(url)]);
-        if (api.status === 200 && JSON.parse(api.body).agentExecutionEnabled === false && client.status === 200) { ready = true; break; }
+        if (api.status === 200 && JSON.parse(api.body).agentExecutionEnabled === enableAgents && client.status === 200) { ready = true; break; }
       } catch {}
       await new Promise(resolve => setTimeout(resolve, 400));
     }
     if (!ready) throw new Error(`Startup health checks failed; see ${home}/logs.`);
-    console.log(`Original board ready: ${url}\nAgent execution is disabled. Press Ctrl+C to stop.`);
+    console.log(`Original board ready: ${url}\nAgent execution is ${enableAgents ? 'ENABLED' : 'disabled'}. Press Ctrl+C to stop.`);
     if (process.platform === 'win32' && process.env.ORIGINAL_NO_BROWSER !== '1') {
       // URL is constructed exclusively from validated numeric port and fixed loopback host.
       const browser = spawn('cmd.exe', ['/d', '/s', '/c', 'start', '""', url], { stdio: 'ignore', windowsHide: true });
