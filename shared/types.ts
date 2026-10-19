@@ -125,6 +125,11 @@ export interface CreateProjectRequest {
   repoPath?: string;
   /** When provided, the server clones this git URL into the configured clone root and uses it as repoPath. */
   repoUrl?: string;
+  /** Create a brand-new local git repository under the configured clone root. Requires name. */
+  createNew?: boolean;
+  /** With createNew, also create and push a GitHub repository using the locally authenticated gh CLI. */
+  createGitHub?: boolean;
+  githubVisibility?: 'private' | 'public';
   defaultAgentType?: AgentType;
   defaultPriority?: Priority;
   defaultBaseBranch?: string;
