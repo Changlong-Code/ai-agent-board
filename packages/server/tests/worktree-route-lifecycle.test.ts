@@ -125,3 +125,12 @@ test('archive, delete, and manual cleanup clear clean worktree state', async () 
     assert.equal(state.deleted, true);
   });
 });
+
+
+test('failed task can be deleted when no live agent session exists', async () => {
+  await withRoutes({ status: 'missing' }, async (baseUrl, state) => {
+    const response = await fetch(`${baseUrl}/api/tasks/task-1`, { method: 'DELETE' });
+    assert.equal(response.status, 204);
+    assert.equal(state.deleted, true);
+  });
+});
