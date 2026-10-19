@@ -239,6 +239,89 @@ async function normalizeConfiguredHermesAvailability(
     : agent);
 }
 
+async function discoverWindowsCodexCandidates(
+  execCommand: ExecCommand,
+  env: NodeJS.ProcessEnv,
+): Promise<{ candidates: string[]; failures: string[] }> {
+  const candidates: string[] = [];
+  const failures: string[] = [];
+
+  const whereResult = await runProbe(execCommand, 'where.exe', ['codex'], env);
+  if (whereResult.ok) candidates.push(...outputLines(whereResult.stdout));
+  else failures.push(`where.exe failed: ${whereResult.error ?? 'unknown error'}`);
+
+  const powershellResult = await runProbe(execCommand, 'powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-Command',
+    "Get-Command codex -ErrorAction Stop | ForEach-Object { $_.Source }",
+  ], env);
+  if (powershellResult.ok) candidates.push(...outputLines(powershellResult.stdout));
+  else failures.push(`PowerShell Get-Command failed: ${powershellResult.error ?? 'unknown error'}`);
+
+  const pathFallback = findWindowsExecutableOnPath('codex', env);
+  if (pathFallback) candidates.push(pathFallback);
+
+  return { candidates: [...new Set(candidates)], failures };
+}
+
+async function verifyWindowsCodexCandidate(
+  candidate: string,
+  execCommand: ExecCommand,
+  env: NodeJS.ProcessEnv,
+): Promise<CommandProbeResult> {
+  const args = ['--version'];
+  if (/\.(cmd|bat)$/i.test(candidate)) {
+    const commandLine = `"${candidate}" --version`;
+    const result = await runProbe(execCommand, 'cmd.exe', ['/d', '/s', '/c', commandLine], env);
+    return result.ok ? { ...result, args } : result;
+  }
+
+  const result = await runProbe(execCommand, candidate, args, env);
+  return result.ok ? { ...result, args } : result;
+}
+
+async function normalizeWindowsCodexAvailability(
+  agents: AgentInfo[],
+  execCommand: ExecCommand,
+  env: NodeJS.ProcessEnv,
+): Promise<AgentInfo[]> {
+  const codex = agents.find(agent => agent.name === 'codex');
+  if (!codex || codex.available) return agents;
+
+  const discovery = await discoverWindowsCodexCandidates(execCommand, env);
+  if (discovery.candidates.length === 0) {
+    const discoveryReason = discovery.failures.length > 0
+      ? ` Discovery failures: ${discovery.failures.join(' ')}`
+      : '';
+    const reason = appendSdkReason(
+      `Codex CLI not found by Windows PATH discovery (where.exe/Get-Command).${discoveryReason}`,
+      codex.reason,
+    );
+    return agents.map(agent => agent.name === 'codex' ? { ...agent, reason } : agent);
+  }
+
+  const failures: string[] = [];
+  for (const candidate of discovery.candidates) {
+    const result = await verifyWindowsCodexCandidate(candidate, execCommand, env);
+    if (result.ok) {
+      const version = firstOutputLine(`${result.stdout}\n${result.stderr}`);
+      return agents.map(agent => agent.name === 'codex'
+        ? { ...agent, available: true, version, reason: undefined }
+        : agent);
+    }
+    failures.push(`${candidate}: ${result.error ?? 'unknown error'}`);
+  }
+
+  const reason = appendSdkReason(
+    `Codex CLI discovered on Windows but version probe failed. Probe failures: ${failures.join(' ')}`,
+    codex.reason,
+  );
+  return agents.map(agent => agent.name === 'codex' ? { ...agent, reason } : agent);
+}
+
 async function normalizeWindowsCopilotAvailability(
   agents: AgentInfo[],
   execCommand: ExecCommand,
@@ -291,6 +374,7 @@ export async function detectAvailableAgents(options: DetectAvailableAgentsOption
     return normalizeConfiguredHermesAvailability(agents, execCommand, env);
   }
 
-  const normalized = await normalizeWindowsCopilotAvailability(agents, execCommand, env);
-  return normalizeConfiguredHermesAvailability(normalized, execCommand, env);
+  const copilotNormalized = await normalizeWindowsCopilotAvailability(agents, execCommand, env);
+  const codexNormalized = await normalizeWindowsCodexAvailability(copilotNormalized, execCommand, env);
+  return normalizeConfiguredHermesAvailability(codexNormalized, execCommand, env);
 }
