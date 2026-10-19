@@ -56,13 +56,13 @@ function cloneErrorMessage(err: unknown): string {
 }
 
 /** Clone into a temp dir then atomically rename, cleaning up on any failure. */
-async function cloneIntoTarget(url: string, target: string): Promise<void> {
+function cloneIntoTarget(url: string, target: string): void {
   const tmp = `${target}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   try {
-    await cloneRepoAsync(url, tmp);
+    cloneRepo(url, tmp);
   } catch (err: unknown) {
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* best effort */ }
-    throw new HttpError(400, cloneErrorMessage(err));
+    throw new HttpError(400, `git clone failed: ${cloneErrorMessage(err)}`);
   }
   try {
     fs.renameSync(tmp, target);
@@ -78,7 +78,7 @@ async function cloneIntoTarget(url: string, target: string): Promise<void> {
  * URL; on a name collision with a different repo, falls back to a hash-suffixed
  * directory. Returns the resulting absolute repo path.
  */
-async function resolveAndCloneRepo(parsed: ParsedRepoUrl): Promise<string> {
+function resolveAndCloneRepo(parsed: ParsedRepoUrl): string {
   const cloneRoot = getCloneRoot();
   fs.mkdirSync(cloneRoot, { recursive: true });
   const normalizedUrl = normalizeRepoUrl(parsed.url);
@@ -102,7 +102,7 @@ async function resolveAndCloneRepo(parsed: ParsedRepoUrl): Promise<string> {
       fs.rmdirSync(target); // empty dir — let git create it fresh
     }
 
-    await cloneIntoTarget(parsed.url, target);
+    cloneIntoTarget(parsed.url, target);
     return fs.realpathSync(target);
   }
 
