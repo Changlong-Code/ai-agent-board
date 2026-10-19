@@ -1,7 +1,7 @@
 import { isAgentExecutionEnabled, assertAgentExecutionEnabled, AgentExecutionDisabledError } from '../services/execution-policy.js';
 import { Request, Response, NextFunction } from 'express';
 import { v4 as uuid } from 'uuid';
-import { execFileSync } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -375,11 +375,60 @@ export function getGitRemoteOrigin(repoPath: string): string | null {
  * interactive credential prompts so private repos without ambient credentials
  * fail fast instead of hanging.
  */
+function execGitAsync(args: string[], timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, {
+      timeout: timeoutMs,
+      maxBuffer: 10 * 1024 * 1024,
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: '0',
+        GCM_INTERACTIVE: 'Never',
+      },
+    }, (error, _stdout, stderr) => {
+      if (!error) {
+        resolve();
+        return;
+      }
+      const detail = stderr?.toString().trim();
+      const wrapped = new Error(detail || error.message) as Error & { code?: string | number; killed?: boolean };
+      wrapped.code = (error as NodeJS.ErrnoException).code;
+      wrapped.killed = Boolean((error as Error & { killed?: boolean }).killed);
+      reject(wrapped);
+    });
+  });
+}
+
+/**
+ * Clone a repository without blocking the Node event loop.
+ * A short ls-remote preflight makes missing/private-repo credentials fail fast
+ * instead of leaving the UI on "Cloning..." for the full clone timeout.
+ */
+export async function cloneRepoAsync(repoUrl: string, targetPath: string, timeoutMs = 120_000): Promise<void> {
+  try {
+    await execGitAsync(['ls-remote', '--exit-code', '--', repoUrl], Math.min(timeoutMs, 20_000));
+  } catch (err: unknown) {
+    const message = errorMessage(err);
+    throw new Error(
+      `Cannot access repository before clone: ${message}. ` +
+      'For private GitHub repos, authenticate Git/Git Credential Manager first and retry.',
+    );
+  }
+
+  try {
+    await execGitAsync(['clone', '--', repoUrl, targetPath], timeoutMs);
+  } catch (err: unknown) {
+    const message = errorMessage(err);
+    throw new Error(`git clone failed: ${message}`);
+  }
+}
+
+/** @deprecated Prefer cloneRepoAsync so clone/auth failures do not block the server event loop. */
 export function cloneRepo(repoUrl: string, targetPath: string, timeoutMs = 120_000): void {
   execFileSync('git', ['clone', '--', repoUrl, targetPath], {
     stdio: 'pipe',
     timeout: timeoutMs,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never' },
   });
 }
 
