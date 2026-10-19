@@ -267,43 +267,6 @@ async function discoverWindowsCodexCandidates(
   return { candidates: [...new Set(candidates)], failures };
 }
 
-async function verifyWindowsCodexCandidate(
-  candidate: string,
-  execCommand: ExecCommand,
-  env: NodeJS.ProcessEnv,
-): Promise<CommandProbeResult> {
-  const args = ['--version'];
-  const lower = candidate.toLowerCase();
-
-  // npm-installed CLIs on Windows are commonly exposed as .cmd/.ps1 shims.
-  // Node's direct spawn/execFile cannot reliably execute those shims, so route
-  // .cmd/.bat through cmd.exe. Prefer a sibling .cmd for extensionless npm shims.
-  let cmdCandidate = candidate;
-  if (!path.extname(candidate) && existsSync(`${candidate}.cmd`)) {
-    cmdCandidate = `${candidate}.cmd`;
-  }
-
-  if (/\.(cmd|bat)$/i.test(cmdCandidate)) {
-    const commandLine = `call "${cmdCandidate}" --version`;
-    const result = await runProbe(execCommand, process.env.ComSpec || 'cmd.exe', ['/d', '/c', commandLine], env);
-    return result.ok ? { ...result, args } : result;
-  }
-
-  // PowerShell shims are a last-resort discovery artifact. If a sibling .cmd
-  // exists, use that instead because it does not depend on execution policy.
-  if (lower.endsWith('.ps1')) {
-    const siblingCmd = candidate.replace(/\.ps1$/i, '.cmd');
-    if (existsSync(siblingCmd)) {
-      const commandLine = `call "${siblingCmd}" --version`;
-      const result = await runProbe(execCommand, process.env.ComSpec || 'cmd.exe', ['/d', '/c', commandLine], env);
-      return result.ok ? { ...result, args } : result;
-    }
-  }
-
-  const result = await runProbe(execCommand, candidate, args, env);
-  return result.ok ? { ...result, args } : result;
-}
-
 async function normalizeWindowsCodexAvailability(
   agents: AgentInfo[],
   execCommand: ExecCommand,
