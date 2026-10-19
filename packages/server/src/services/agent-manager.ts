@@ -543,6 +543,17 @@ export class AgentManager {
       terminated = true;
       const entry = this.sessions.get(task.id);
       if (entry?.timeoutId) clearTimeout(entry.timeoutId);
+      // A placeholder session is registered before worktree/session setup to
+      // prevent duplicate starts. Any terminal result must remove that entry;
+      // otherwise setup failures leave isRunning(taskId) stuck true forever
+      // and block delete/archive actions.
+      if (entry) {
+        this.sessions.delete(task.id);
+        if (status === 'failed' && entry.session) {
+          entry.session.abort().catch(() => {});
+          entry.session.destroy().catch(() => {});
+        }
+      }
       const duration = Date.now() - sessionStartTime;
 
       // Item 5: Emit structured summary event
