@@ -47,3 +47,12 @@ Setup-Original-Board.cmd → Diagnose-Original-Board.cmd → Verify-Original-Boa
   - Create PR 前仅对 Board 管理的独立 task worktree 自动 git add -A + commit，再 push/Create PR；主 checkout 不自动提交。
 - 新增针对测试 packages/server/tests/windows-pr-clone-flow.test.ts。
 - 这些新修复尚未在用户 Windows 机器重新下载后复测；下一步先 Setup/Build 后做一次最小 clone + Agent + Create PR 回归。
+
+
+## 2026-10-19 Board 原生新建 Git 项目
+- New Project 新增三种来源：New Project / Local Path / GitHub URL。
+- New Project 模式由 Board Server 在 cloneRoot 下创建项目目录、git init、切到 main、创建 README.md、完成 Initial commit。
+- 可选勾选同时创建 GitHub Repository（Private/Public）；使用本机已登录的 gh CLI 创建 origin 并首次 push。
+- 保留现有 Local Path 与 GitHub URL 导入流程。
+- 本轮修改：shared/types.ts、packages/server/src/routes/projects.ts、packages/client/src/components/ProjectDialog.tsx。
+- 尚未在用户 Windows 10 1909 机器重新执行 Setup/build；下一步只做这一项实机编译与 New Project 冒烟测试。
