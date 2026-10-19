@@ -314,33 +314,19 @@ async function normalizeWindowsCodexAvailability(
 
   const discovery = await discoverWindowsCodexCandidates(execCommand, env);
   if (discovery.candidates.length === 0) {
-    const discoveryReason = discovery.failures.length > 0
-      ? ` Discovery failures: ${discovery.failures.join(' ')}`
-      : '';
-    const reason = appendSdkReason(
-      `Codex CLI not found by Windows PATH discovery (where.exe/Get-Command).${discoveryReason}`,
-      codex.reason,
-    );
-    return agents.map(agent => agent.name === 'codex' ? { ...agent, reason } : agent);
+    return agents.map(agent => agent.name === 'codex'
+      ? { ...agent, available: false, reason: 'Codex CLI not found in PATH' }
+      : agent);
   }
 
-  const failures: string[] = [];
-  for (const candidate of discovery.candidates) {
-    const result = await verifyWindowsCodexCandidate(candidate, execCommand, env);
-    if (result.ok) {
-      const version = firstOutputLine(`${result.stdout}\n${result.stderr}`);
-      return agents.map(agent => agent.name === 'codex'
-        ? { ...agent, available: true, version, reason: undefined }
-        : agent);
-    }
-    failures.push(`${candidate}: ${result.error ?? 'unknown error'}`);
-  }
-
-  const reason = appendSdkReason(
-    `Codex CLI discovered on Windows but version probe failed. Probe failures: ${failures.join(' ')}`,
-    codex.reason,
-  );
-  return agents.map(agent => agent.name === 'codex' ? { ...agent, reason } : agent);
+  // On Windows, npm exposes Codex through .cmd/.ps1 shims. Node execFile cannot
+  // reliably health-probe those shims, even though they work from PowerShell/CMD.
+  // Treat successful Windows discovery as sufficient here. AgentManager then calls
+  // CodexProvider.start(), whose @openai/codex-sdk initialization is the real runtime
+  // readiness check and will mark the provider unavailable if SDK startup fails.
+  return agents.map(agent => agent.name === 'codex'
+    ? { ...agent, available: true, reason: undefined }
+    : agent);
 }
 
 async function normalizeWindowsCopilotAvailability(
@@ -355,13 +341,7 @@ async function normalizeWindowsCopilotAvailability(
 
   const discovery = await discoverWindowsCopilotCandidates(execCommand, env);
   if (discovery.candidates.length === 0) {
-    const discoveryReason = discovery.failures.length > 0
-      ? ` Discovery failures: ${discovery.failures.join(' ')}`
-      : '';
-    const reason = appendSdkReason(
-      `Copilot CLI not found by Windows PATH discovery (where.exe/Get-Command).${discoveryReason}`,
-      copilot.reason,
-    );
+    const reason = 'Copilot CLI not found in PATH';
     return agents.map(agent => agent.name === 'copilot' ? { ...agent, reason } : agent);
   }
 
@@ -378,10 +358,7 @@ async function normalizeWindowsCopilotAvailability(
     failures.push(`${candidate}: ${result.error ?? 'unknown error'}`);
   }
 
-  const reason = appendSdkReason(
-    `Copilot CLI discovered by Windows PATH discovery but explicit health probes failed. Probe failures: ${failures.join(' ')}`,
-    copilot.reason,
-  );
+  const reason = 'Copilot CLI found, but the health check failed';
   return agents.map(agent => agent.name === 'copilot' ? { ...agent, reason } : agent);
 }
 
