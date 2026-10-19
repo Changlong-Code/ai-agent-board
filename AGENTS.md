@@ -1,5 +1,21 @@
 # AGENTS.md
 
+## Low-Token Operating Rule (windows-m1)
+
+For work on the Windows local edition, use the low-token context protocol before broader repository analysis.
+
+Default read order:
+1. `AI_CONTEXT.md`
+2. `CHECKPOINT_SHORT.md`
+3. Only the 1-3 files directly required by the current task
+
+Do not start by recursively scanning the repository, reading all historical checkpoints, or loading all `.squad` / skill files. Expand scope only when the task, an error, or a referenced dependency requires it.
+
+If the user says only "continue development", treat that as one smallest verifiable increment from the current short checkpoint, not permission to re-analyze the whole project or advance multiple milestones.
+
+For ordinary low-risk work, use `LOW_TOKEN_TASK_TEMPLATE.md`. The existing Squad Operating Mode and coverage requirements still apply when the change actually touches high-risk areas such as agent runtime, git/worktrees, auth/path safety, event streaming, task groups, repositories, or browser/client-server behavior.
+
+
 ## Project Overview
 
 Agentic AI Kanban Board — a drag-and-drop Kanban board that delegates coding tasks to AI coding agents (GitHub Copilot, Claude Code, OpenAI Codex, OpenCode, Hermes, OpenClaw). Monorepo with npm workspaces.
