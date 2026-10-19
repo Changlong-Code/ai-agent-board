@@ -248,11 +248,12 @@ export function createProjectsRouter(
   }));
 
   router.post('/', asyncHandler(async (req: Request, res: Response) => {
-    const { name, repoPath, repoUrl } = req.body;
+    const { name, repoPath, repoUrl, createNew, createGitHub, githubVisibility } = req.body;
     const aliases = parseAliases(req.body.aliases);
     if (typeof aliases === 'string') { res.status(400).json({ error: aliases }); return; }
     const projectName = typeof name === 'string' ? name.trim() : undefined;
     const hasRepoUrl = typeof repoUrl === 'string' && repoUrl.trim().length > 0;
+    const wantsNewProject = createNew === true;
 
     if (req.body.isDefault !== undefined) {
       res.status(400).json({ error: 'isDefault is immutable' }); return;
@@ -260,8 +261,23 @@ export function createProjectsRouter(
     if (repoUrl !== undefined && typeof repoUrl !== 'string') {
       res.status(400).json({ error: 'repoUrl must be a string' }); return;
     }
+    if (createNew !== undefined && typeof createNew !== 'boolean') {
+      res.status(400).json({ error: 'createNew must be a boolean' }); return;
+    }
+    if (createGitHub !== undefined && typeof createGitHub !== 'boolean') {
+      res.status(400).json({ error: 'createGitHub must be a boolean' }); return;
+    }
+    if (githubVisibility !== undefined && githubVisibility !== 'private' && githubVisibility !== 'public') {
+      res.status(400).json({ error: 'githubVisibility must be private or public' }); return;
+    }
     if (hasRepoUrl && typeof repoPath === 'string' && repoPath.trim()) {
       res.status(400).json({ error: 'provide either repoUrl or repoPath, not both' }); return;
+    }
+    if (wantsNewProject && (hasRepoUrl || (typeof repoPath === 'string' && repoPath.trim()))) {
+      res.status(400).json({ error: 'createNew cannot be combined with repoUrl or repoPath' }); return;
+    }
+    if (wantsNewProject && !projectName) {
+      res.status(400).json({ error: 'name is required when createNew is true' }); return;
     }
     if (!projectName && repoPath === undefined && !hasRepoUrl) {
       res.status(400).json({ error: 'name, repoPath, or repoUrl is required' }); return;
@@ -279,7 +295,46 @@ export function createProjectsRouter(
     let expandedRepoPath: string | undefined;
     let storedRepoUrl: string | undefined;
 
-    if (hasRepoUrl) {
+    if (wantsNewProject) {
+      const folderName = projectName as string;
+      if (folderName === '.' || folderName === '..' || /[\\/]/.test(folderName)) {
+        res.status(400).json({ error: 'Project Name cannot contain path separators' }); return;
+      }
+
+      const target = path.join(getCloneRoot(), folderName);
+      const boundaryErr = isUnderAllowedRoots(target);
+      if (boundaryErr) { res.status(400).json({ error: boundaryErr }); return; }
+      if (fs.existsSync(target) && fs.readdirSync(target).length > 0) {
+        res.status(409).json({ error: `project folder already exists and is not empty: ${target}` }); return;
+      }
+
+      try {
+        fs.mkdirSync(target, { recursive: true });
+        execFileSync('git', ['init'], { cwd: target, stdio: 'pipe' });
+        execFileSync('git', ['checkout', '-B', 'main'], { cwd: target, stdio: 'pipe' });
+        execFileSync('git', ['config', 'user.name', 'AI Agent Board'], { cwd: target, stdio: 'pipe' });
+        execFileSync('git', ['config', 'user.email', 'ai-agent-board@users.noreply.github.com'], { cwd: target, stdio: 'pipe' });
+
+        const readme = path.join(target, 'README.md');
+        if (!fs.existsSync(readme)) fs.writeFileSync(readme, `# ${folderName}\n`, 'utf8');
+        execFileSync('git', ['add', '-A'], { cwd: target, stdio: 'pipe' });
+        execFileSync('git', ['commit', '-m', 'Initial commit'], { cwd: target, stdio: 'pipe' });
+
+        expandedRepoPath = fs.realpathSync(target);
+
+        if (createGitHub === true) {
+          const visibility = githubVisibility === 'public' ? '--public' : '--private';
+          execFileSync('gh', ['repo', 'create', folderName, visibility, '--source=.', '--remote=origin', '--push'], {
+            cwd: target,
+            stdio: 'pipe',
+            env: { ...process.env, GH_PROMPT_DISABLED: '1' },
+          });
+          storedRepoUrl = getGitRemoteOrigin(target) ?? undefined;
+        }
+      } catch (err: unknown) {
+        res.status(400).json({ error: `failed to create project: ${cloneErrorMessage(err)}` }); return;
+      }
+    } else if (hasRepoUrl) {
       const parsed = parseGitRepoUrl(repoUrl.trim());
       if (typeof parsed === 'string') { res.status(400).json({ error: parsed }); return; }
       try {
