@@ -41,9 +41,35 @@ export function paramId(req: Request): string {
 
 // ─── Git ref validation ─────────────────────────────────────────────
 
-const GIT_REF_RE = /^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$/;
+const GIT_REF_RE = /^[\p{L}\p{N}_][\p{L}\p{N}._/-]*$/u;
 export function isValidGitRef(ref: string): boolean {
-  return GIT_REF_RE.test(ref) && !ref.includes('..') && !ref.endsWith('.lock') && ref.length <= 200;
+  if (!ref || ref.length > 200 || !GIT_REF_RE.test(ref)) return false;
+  if (ref.startsWith('/') || ref.endsWith('/') || ref.includes('//')) return false;
+  if (ref.includes('..') || ref.includes('@{') || ref.endsWith('.')) return false;
+  const segments = ref.split('/');
+  return segments.every((segment) =>
+    Boolean(segment)
+    && !segment.startsWith('.')
+    && !segment.endsWith('.lock')
+  );
+}
+
+/**
+ * Build a Git-safe task branch. Unicode letters/numbers are preserved so
+ * Chinese task titles do not collapse to the invalid branch "task/".
+ * If a title has no usable letters/numbers (for example emoji only), use
+ * a deterministic task-id suffix as the fallback.
+ */
+export function makeTaskBranchName(title: string, taskId = 'change'): string {
+  const slug = title
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/g, '');
+  const fallback = taskId.replace(/[^a-zA-Z0-9]+/g, '').slice(0, 8) || 'change';
+  return `task/${slug || `task-${fallback}`}`;
 }
 
 // ─── Repo-path validation ───────────────────────────────────────────
@@ -636,6 +662,11 @@ export async function startAgentForTask(
     startedAt: Date.now(),
     completedAt: undefined,
   };
+  if (task.useWorktree && (!task.branchName || !isValidGitRef(task.branchName))) {
+    const repairedBranch = makeTaskBranchName(task.title, task.id);
+    task = { ...task, branchName: repairedBranch };
+    updates.branchName = repairedBranch;
+  }
   if (task.columnId === 'backlog') {
     updates.columnId = 'in-progress';
   }
