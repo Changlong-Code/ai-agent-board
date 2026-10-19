@@ -93,6 +93,43 @@ function getErrorStderr(err: unknown): string {
   return '';
 }
 
+
+/**
+ * Commit dirty changes produced inside a Board-managed task worktree before
+ * pushing/creating a PR. We deliberately do not auto-commit when there is no
+ * task worktree, because the main checkout may contain unrelated user changes.
+ */
+export function commitManagedWorktreeChanges(task: Task): boolean {
+  if (!task.repoPath || !task.worktreePath || !task.branchName) return false;
+
+  const repo = path.resolve(task.repoPath);
+  const worktree = path.resolve(task.worktreePath);
+  if (repo === worktree) return false;
+  if (!fs.existsSync(worktree)) {
+    throw new Error(`Task worktree does not exist: ${worktree}`);
+  }
+
+  const status = execFileSync('git', ['status', '--porcelain'], {
+    cwd: worktree,
+    stdio: 'pipe',
+  }).toString();
+  if (!status.trim()) return false;
+
+  execFileSync('git', ['add', '-A'], { cwd: worktree, stdio: 'pipe' });
+
+  const safeTitle = task.title.replace(/[\r\n<>]/g, ' ').trim().slice(0, 120) || 'Agent Board task';
+  execFileSync(
+    'git',
+    [
+      '-c', 'user.name=AI Agent Board',
+      '-c', 'user.email=ai-agent-board@users.noreply.github.com',
+      'commit', '-m', `Agent Board: ${safeTitle}`,
+    ],
+    { cwd: worktree, stdio: 'pipe' },
+  );
+  return true;
+}
+
 interface GroupQueue {
   groupId: string;
   maxConcurrency: number;
@@ -422,6 +459,7 @@ export class AgentManager {
     }
 
     try {
+      commitManagedWorktreeChanges(task);
       execFileSync('git', ['push', '-u', 'origin', task.branchName], { cwd, stdio: 'pipe' });
       const prTitle = task.title.replace(/[<>]/g, '').slice(0, 200);
       const result = execFileSync(
