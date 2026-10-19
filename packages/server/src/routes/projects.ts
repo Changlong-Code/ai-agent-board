@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { spawnSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
