@@ -54,7 +54,7 @@ export function createGitRouter(repo: TaskRepository, agentManager: AgentManager
     const task = await repo.getById(paramId(req));
     if (!task) { res.status(404).json({ error: 'task not found' }); return; }
     if (!task.repoPath || !task.branchName) { res.json({ pr: null }); return; }
-    try { res.json({ pr: getGithubPr(task.repoPath, task.branchName) }); }
+    try { res.json({ pr: getGithubPr(task.repoPath, task.branchName, task.baseBranch || 'main') }); }
     catch (error) { res.status(503).json({ error: error instanceof Error ? error.message : String(error) }); }
   }));
 
