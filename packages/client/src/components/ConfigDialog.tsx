@@ -17,6 +17,7 @@ export function ConfigDialog({ open, config, onClose, onSubmit }: ConfigDialogPr
   const [policySaved, setPolicySaved] = useState('');
   const [error, setError] = useState('');
   const [updateInfo, setUpdateInfo] = useState('');
+  const [updateBusy, setUpdateBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -112,13 +113,24 @@ export function ConfigDialog({ open, config, onClose, onSubmit }: ConfigDialogPr
               <div className="rounded-lg border border-border p-3">
                 <div className="text-sm font-semibold">Self Update (Windows)</div>
                 <p className="my-2 text-xs text-muted-foreground">Check the current Git branch and local changes. The updater must run after Board is closed.</p>
-                <button type="button" className="rounded border border-border px-3 py-2 text-xs" onClick={() => {
-                  void fetch('/api/self-update/status').then(async r => {
-                    const body = await r.json();
-                    if (!r.ok) throw new Error(body.detail || body.error);
-                    setUpdateInfo('Branch: ' + body.branch + ' | Commit: ' + body.current + (body.dirty ? ' | Local changes: update blocked' : ' | Clean') + '\\nTo check for updates: node windows\\\\self-update.cjs');
-                  }).catch(e => setUpdateInfo(String(e)));
-                }}>Check local update readiness</button>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" className="rounded border border-border px-3 py-2 text-xs" onClick={() => {
+                    void fetch('/api/self-update/status').then(async r => {
+                      const body = await r.json();
+                      if (!r.ok) throw new Error(body.error || 'Update check failed');
+                      setUpdateInfo('Branch: ' + body.branch + ' | Commit: ' + body.current.slice(0, 7) + (body.dirty ? ' | Unsaved code changes' : ' | Clean') + ' | State: ' + (body.state?.phase || 'idle'));
+                    }).catch(e => setUpdateInfo(String(e)));
+                  }}>Check update status</button>
+                  <button type="button" disabled={updateBusy} className="rounded bg-primary px-3 py-2 text-xs text-primary-foreground disabled:opacity-50" onClick={() => {
+                    if (!window.confirm('Build an update from GitHub and restart this local Board if successful? Save work before proceeding.')) return;
+                    setUpdateBusy(true);
+                    void fetch('/api/self-update/install', { method: 'POST', headers: { 'Content-Type': 'application/json' } }).then(async r => {
+                      const body = await r.json();
+                      if (!r.ok) throw new Error(body.error || 'Update could not start');
+                      setUpdateInfo(body.message);
+                    }).catch(e => setUpdateInfo(String(e))).finally(() => setUpdateBusy(false));
+                  }}>{updateBusy ? 'Starting…' : 'Install update'}</button>
+                </div>
                 {updateInfo && <p className="mt-2 whitespace-pre-wrap text-xs" role="status">{updateInfo}</p>}
               </div>
               {error && (
