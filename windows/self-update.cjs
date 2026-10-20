@@ -7,6 +7,7 @@ const http = require('node:http');
 const { spawn, spawnSync } = require('node:child_process');
 const { writeUpdateState } = require('./update-state.cjs');
 const { rollbackDecision } = require('./rollback-guard.cjs');
+const { maybeInjectRollbackFault } = require('./rollback-fault-test.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const HOME = path.resolve(process.env.AGENTBOARD_HOME || process.env.ORIGINAL_BOARD_HOME ||
@@ -214,6 +215,11 @@ async function install() {
     // Preflight has already built the target in its own worktree. Compile in
     // the main checkout using existing dependencies; never run npm ci here.
     builds(ROOT, false);
+    // Disabled by default; an expiring one-shot marker works only in the
+    // dedicated AI-Agent-Board-SelfUpdate-Test install on 8876/8877.
+    if (maybeInjectRollbackFault({ home: HOME, root: ROOT, ports: getPorts(), prior, target })) {
+      throw new Error('EXPECTED_ISOLATED_TEST_FAILURE: exercise safe rollback after code switch');
+    }
     status('restarting');
     await launchAndCheck();
     healthy = true;
