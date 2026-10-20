@@ -37,25 +37,24 @@ function gh(args: string[], cwd: string, run: Run): string {
     throw new Error('GitHub CLI failed. Check that gh is installed and run gh auth login. ' + reason);
   }
 }
-export function getGithubPr(cwd: string, branch: string, run: Run = defaultRun): GithubPrStatus | null {
+export function getGithubPr(cwd: string, branch: string, base?: string, run: Run = defaultRun): GithubPrStatus | null {
   const { repository } = findGithubRemote(cwd, run);
-  try {
-    const data = gh(['pr', 'view', branch, '--repo', repository, '--json',
-      'url,number,state,isDraft,mergeable,reviewDecision,baseRefName,headRefName'], cwd, run);
-    const status = JSON.parse(data) as GithubPrStatus;
-    if (status.headRefName !== branch) throw new Error('PR head branch mismatch');
-    return status;
-  } catch (error) {
-    // A missing PR is different from a missing or unauthenticated GitHub CLI.
-    const message = error instanceof Error ? error.message : String(error);
-    if (/no pull requests found|could not resolve to a pull request/i.test(message)) return null;
-    throw error;
-  }
+  // "gh pr view <branch>" sometimes fails to resolve an existing PR after
+  // changing its base branch. Listing by head is stable and includes OPEN,
+  // CLOSED and MERGED PRs.
+  const data = gh(['pr', 'list', '--repo', repository, '--head', branch,
+    '--state', 'all', '--limit', '100', '--json',
+    'url,number,state,isDraft,mergeable,reviewDecision,baseRefName,headRefName'], cwd, run);
+  const results = JSON.parse(data) as GithubPrStatus[];
+  if (!Array.isArray(results)) throw new Error('Unexpected GitHub PR list response.');
+  const matches = results.filter(pr => pr.headRefName === branch);
+  const scoped = base ? matches.filter(pr => pr.baseRefName === base) : matches;
+  return scoped.find(pr => pr.state === 'OPEN') || scoped[0] || null;
 }
 export function mergeGithubPr(cwd: string, branch: string, base: string, confirmed: boolean, run: Run = defaultRun): GithubPrStatus {
   if (!confirmed) throw new Error('Explicit user confirmation is required to merge on GitHub.');
   const remote = findGithubRemote(cwd, run);
-  const pr = getGithubPr(cwd, branch, run);
+  const pr = getGithubPr(cwd, branch, base, run);
   if (!pr) throw new Error('Create a GitHub PR before merging.');
   if (pr.state !== 'OPEN') throw new Error('PR is not open.');
   if (pr.isDraft) throw new Error('Mark the draft PR ready for review before merging.');
@@ -64,7 +63,7 @@ export function mergeGithubPr(cwd: string, branch: string, base: string, confirm
   if (pr.reviewDecision === 'CHANGES_REQUESTED' || pr.reviewDecision === 'REVIEW_REQUIRED')
     throw new Error('GitHub review is required before merging.');
   gh(['pr', 'merge', String(pr.number), '--repo', remote.repository, '--merge'], cwd, run);
-  const merged = getGithubPr(cwd, branch, run);
+  const merged = getGithubPr(cwd, branch, base, run);
   if (!merged || merged.state !== 'MERGED') throw new Error('GitHub did not confirm the PR as merged.');
   return merged;
 }
