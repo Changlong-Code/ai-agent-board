@@ -18,7 +18,7 @@ const defaultRun: Run = (exe, args, cwd) => execFileSync(exe, args, {
 export function parseGithubRemote(url: string): string | null {
   const clean = url.trim();
   const match = clean.match(/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/i);
-  return match ? match[1] + '/' + match[2] : null;
+  return match ? match[1] + '/' + match[2].replace(/\.git$/i, '') : null;
 }
 export function findGithubRemote(cwd: string, run: Run = defaultRun) {
   const remotes = run('git', ['remote'], cwd).split(/\r?\n/).filter(Boolean);
