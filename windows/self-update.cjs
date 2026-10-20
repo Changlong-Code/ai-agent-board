@@ -20,7 +20,14 @@ const stamp = () => new Date().toISOString();
 let currentState = {};
 
 function status(phase, extra = {}) {
-  currentState = { ...currentState, ...extra, phase, updatedAt: stamp() };
+  const now = stamp();
+  const start = currentState.startedAt || now;
+  const completed = ['complete', 'failed', 'rolled-back', 'manual-recovery-required', 'up-to-date'].includes(phase);
+  currentState = {
+    ...currentState, ...extra, phase, startedAt: start, updatedAt: now,
+    phaseStartedAt: currentState.phase === phase ? currentState.phaseStartedAt : now,
+    finishedAt: completed ? now : null,
+  };
   fs.mkdirSync(UPDATES, { recursive: true });
   const tmp = STATE + '.tmp-' + process.pid;
   fs.writeFileSync(tmp, JSON.stringify(currentState, null, 2), 'utf8');
