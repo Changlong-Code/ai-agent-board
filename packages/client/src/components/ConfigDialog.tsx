@@ -1,3 +1,4 @@
+import { api } from '@/lib/api';
 import { useEffect, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
@@ -12,12 +13,15 @@ interface ConfigDialogProps {
 
 export function ConfigDialog({ open, config, onClose, onSubmit }: ConfigDialogProps) {
   const [cloneRoot, setCloneRoot] = useState('');
+  const [developmentMode, setDevelopmentMode] = useState<'low' | 'balanced' | 'high'>('low');
+  const [policySaved, setPolicySaved] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setCloneRoot(config?.cloneRoot ?? '');
+    void api.getDevelopmentSettings().then(v => setDevelopmentMode(v.defaultMode)).catch(e => setError(String(e)));
     setError('');
     setSubmitting(false);
   }, [open, config]);
@@ -95,6 +99,15 @@ export function ConfigDialog({ open, config, onClose, onSubmit }: ConfigDialogPr
                 </p>
               </div>
 
+              <div className="rounded-lg border border-border p-3">
+                <label htmlFor="default-development-mode" className="block text-sm font-semibold mb-2">Default development mode</label>
+                <select id="default-development-mode" value={developmentMode} onChange={e => { setDevelopmentMode(e.target.value as 'low' | 'balanced' | 'high'); setPolicySaved(''); }} className="w-full rounded border border-border bg-background p-2 text-sm">
+                  <option value="low">Low (recommended)</option><option value="balanced">Balanced</option><option value="high">High</option>
+                </select>
+                <p className="mt-2 text-xs text-muted-foreground">New tasks inherit this mode. Upgrades always require approval. Provider-level reasoning control is not guaranteed.</p>
+                <button type="button" className="mt-2 rounded bg-primary px-3 py-2 text-xs text-primary-foreground" onClick={() => { void api.setDevelopmentMode(developmentMode).then(() => setPolicySaved('Saved')).catch(e => setError(String(e))); }}>Save development mode</button>
+                {policySaved && <span role="status" className="ml-2 text-xs">{policySaved}</span>}
+              </div>
               {error && (
                 <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
                   {error}
