@@ -819,7 +819,7 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
               )}
 
               {/* PR / Cleanup actions — show when task is done or complete */}
-              {(task.agentStatus === 'complete' || task.columnId === 'done') && (
+              {(task.agentStatus === 'complete' || task.columnId === 'review' || task.columnId === 'done') && (
                 <div className="flex items-center gap-2 overflow-x-auto pb-0.5 pt-1">
                   {!prUrl && onCreatePR && hasRemote === true && (
                     <button
