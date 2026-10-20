@@ -6,6 +6,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawn, spawnSync } = require('node:child_process');
 const { writeUpdateState } = require('./update-state.cjs');
+const { rollbackDecision } = require('./rollback-guard.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const HOME = path.resolve(process.env.AGENTBOARD_HOME || process.env.ORIGINAL_BOARD_HOME ||
@@ -221,12 +222,13 @@ async function install() {
     if (switched && prior) {
       try {
         status('rolling-back', { error: String(err) });
-        // Never discard unrelated edits made during the outage.
-        if (git('status', '--porcelain')) throw new Error('Rollback blocked: uncommitted changes found; preserve them for manual recovery.');
-        const head = git('rev-parse', 'HEAD');
-        if (head !== prior && head !== target) throw new Error('Rollback blocked: branch HEAD changed unexpectedly.');
-        // The tracked checkout has no external edits and HEAD is the updater's own target.
-        if (head !== prior) git('reset', '--hard', prior);
+        // Only reset the updater's own target; never discard unrelated edits.
+        const decision = rollbackDecision({
+          switched, prior, target, head: git('rev-parse', 'HEAD'),
+          dirty: Boolean(git('status', '--porcelain')),
+        });
+        if (decision === 'manual-recovery-required') throw new Error('Rollback blocked: unrelated changes or unexpected HEAD; preserve files for manual recovery.');
+        if (decision === 'restore-prior') git('reset', '--hard', prior);
         // Roll back the application without uninstalling native dependencies.
         builds(ROOT, false);
         restoreDatabase(snapshot);
