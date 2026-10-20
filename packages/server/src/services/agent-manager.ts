@@ -1,3 +1,4 @@
+import { getLowTokenInstructions } from './development-policy.js';
 import { v4 as uuid } from 'uuid';
 import { execFileSync } from 'child_process';
 import fs from 'fs';
@@ -655,6 +656,7 @@ You are a coding agent working on a task in the project directory: ${workingDire
 Task: ${safeTitle}
 ${worktreePath ? `\nIMPORTANT: All file paths MUST be under ${worktreePath}. Do NOT reference or edit files at ${task.repoPath} directly.` : ''}
 ${!hasGit ? `\nIMPORTANT: This directory is not a git repository. Run \`git init\` first before making any changes, so all work is tracked.` : ''}
+${getLowTokenInstructions(task.id)}
 Complete the task described in the user prompt. Be thorough — read relevant files,
 make precise edits, and verify your changes compile/pass tests when applicable.
 
