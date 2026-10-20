@@ -206,8 +206,10 @@ async function install() {
     if (fresh.old !== prior || fresh.branch !== state.branch) throw new Error('Repository changed while preparing update.');
     snapshot = await snapshotDatabase(id);
     status('installing', { dbBackup: snapshot });
-    git('merge', '--ff-only', target);
+    // Mark the pending transition BEFORE changing HEAD: if Git moves HEAD
+    // then reports failure, rollback still knows it must restore the prior ref.
     switched = true;
+    git('merge', '--ff-only', target);
     // Preflight has already built the target in its own worktree. Compile in
     // the main checkout using existing dependencies; never run npm ci here.
     builds(ROOT, false);
@@ -219,8 +221,12 @@ async function install() {
     if (switched && prior) {
       try {
         status('rolling-back', { error: String(err) });
-        // The repo was verified clean and the only tracked changes were applied by this updater.
-        git('reset', '--hard', prior);
+        // Never discard unrelated edits made during the outage.
+        if (git('status', '--porcelain')) throw new Error('Rollback blocked: uncommitted changes found; preserve them for manual recovery.');
+        const head = git('rev-parse', 'HEAD');
+        if (head !== prior && head !== target) throw new Error('Rollback blocked: branch HEAD changed unexpectedly.');
+        // The tracked checkout has no external edits and HEAD is the updater's own target.
+        if (head !== prior) git('reset', '--hard', prior);
         // Roll back the application without uninstalling native dependencies.
         builds(ROOT, false);
         restoreDatabase(snapshot);
