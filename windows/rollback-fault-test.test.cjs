@@ -1,0 +1,17 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const {validateFaultMarker,isIsolatedTest} = require('./rollback-fault-test.cjs');
+const root = path.join('C:', 'Users', 'user', 'AppData', 'Local', 'AI-Agent-Board-SelfUpdate-Test', 'code');
+const home = path.join('C:', 'Users', 'user', 'AppData', 'Local', 'AI-Agent-Board-SelfUpdate-Test', 'data');
+const prior='a'.repeat(40),target='b'.repeat(40);
+const context={home,root,ports:{board:8876,api:8877},prior,target,now:1000000};
+const marker={kind:'rollback-after-build',home,root,prior,target,expiresAt:1001000};
+test('fault gate defaults off outside Windows',()=>{if(process.platform!=='win32')assert.equal(isIsolatedTest(home,root,context.ports),false);});
+test('wrong ports rejected',()=>assert.equal(validateFaultMarker(marker,{...context,ports:{board:8776,api:8777}}),false));
+test('wrong directory rejected',()=>assert.equal(validateFaultMarker(marker,{...context,home:home+'-other'}),false));
+test('expired marker rejected',()=>assert.equal(validateFaultMarker({...marker,expiresAt:999999},context),false));
+test('wrong target SHA rejected',()=>assert.equal(validateFaultMarker({...marker,target:prior},context),false));
+test('missing opt-in marker rejected',()=>assert.equal(validateFaultMarker(null,context),false));
+test('exact isolated test marker accepted on Windows only',()=>assert.equal(validateFaultMarker(marker,context),process.platform==='win32'));
