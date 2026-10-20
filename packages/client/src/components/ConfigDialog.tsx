@@ -18,6 +18,9 @@ export function ConfigDialog({ open, config, onClose, onSubmit }: ConfigDialogPr
   const [error, setError] = useState('');
   const [updateInfo, setUpdateInfo] = useState('');
   const [updateBusy, setUpdateBusy] = useState(false);
+  const [updateState, setUpdateState] = useState<{ phase?: string; startedAt?: string; phaseStartedAt?: string; updatedAt?: string; finishedAt?: string | null; error?: string; to?: string; from?: string } | null>(null);
+  const [updateConnected, setUpdateConnected] = useState(true);
+  const [elapsed, setElapsed] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -27,6 +30,44 @@ export function ConfigDialog({ open, config, onClose, onSubmit }: ConfigDialogPr
     setError('');
     setSubmitting(false);
   }, [open, config]);
+
+  useEffect(() => {
+    if (!open) return;
+    let disposed = false;
+    const refresh = async () => {
+      try {
+        const response = await fetch('/api/self-update/status', { cache: 'no-store' });
+        if (!response.ok) throw new Error('Status unavailable');
+        const info = await response.json() as { busy: boolean; state?: typeof updateState };
+        if (disposed) return;
+        setUpdateConnected(true);
+        setUpdateState(info.state || null);
+        setUpdateBusy(info.busy);
+      } catch {
+        if (!disposed) setUpdateConnected(false);
+      }
+    };
+    void refresh();
+    const poll = window.setInterval(() => { void refresh(); }, 2000);
+    const ticker = window.setInterval(() => setElapsed(Date.now()), 1000);
+    return () => { disposed = true; window.clearInterval(poll); window.clearInterval(ticker); };
+  }, [open]);
+
+  const phase = updateState?.phase || 'idle';
+  const activeUpdate = ['checking','preparing','awaiting-stop','installing','restarting','rolling-back'].includes(phase);
+  const phaseNames: Record<string, string> = {
+    idle: 'Ready', checking: 'Checking GitHub', preparing: 'Preparing and building',
+    'awaiting-stop': 'Safely stopping Board', installing: 'Installing',
+    restarting: 'Restarting and health-checking', complete: 'Update completed',
+    'up-to-date': 'Already up to date', failed: 'Update failed',
+    'rolled-back': 'Update failed — previous version restored',
+    'rolling-back': 'Restoring previous version',
+    'manual-recovery-required': 'Manual recovery required'
+  };
+  const seconds = updateState?.startedAt
+    ? Math.max(0, Math.floor(((updateState.finishedAt ? Date.parse(updateState.finishedAt) : elapsed || Date.now()) - Date.parse(updateState.startedAt)) / 1000))
+    : 0;
+  const elapsedLabel = Math.floor(seconds / 60) + 'm ' + String(seconds % 60).padStart(2, '0') + 's';
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -110,28 +151,38 @@ export function ConfigDialog({ open, config, onClose, onSubmit }: ConfigDialogPr
                 <button type="button" className="mt-2 rounded bg-primary px-3 py-2 text-xs text-primary-foreground" onClick={() => { void api.setDevelopmentMode(developmentMode).then(() => setPolicySaved('Saved')).catch(e => setError(String(e))); }}>Save development mode</button>
                 {policySaved && <span role="status" className="ml-2 text-xs">{policySaved}</span>}
               </div>
-              <div className="rounded-lg border border-border p-3">
+              <div className="rounded-lg border border-border p-3 space-y-2">
                 <div className="text-sm font-semibold">Self Update (Windows)</div>
-                <p className="my-2 text-xs text-muted-foreground">Check the current Git branch and local changes. The updater must run after Board is closed.</p>
-                <div className="flex flex-wrap gap-2">
+                <p className="text-xs text-muted-foreground">The updater prepares the next release before stopping Board. The page reconnects when the server returns.</p>
+                <div className="flex gap-2 flex-wrap">
                   <button type="button" className="rounded border border-border px-3 py-2 text-xs" onClick={() => {
                     void fetch('/api/self-update/status').then(async r => {
                       const body = await r.json();
                       if (!r.ok) throw new Error(body.error || 'Update check failed');
-                      setUpdateInfo('Branch: ' + body.branch + ' | Commit: ' + body.current.slice(0, 7) + (body.dirty ? ' | Unsaved code changes' : ' | Clean') + ' | State: ' + (body.state?.phase || 'idle'));
+                      setUpdateInfo('Branch: ' + body.branch + ' | Commit: ' + body.current.slice(0, 7) + (body.dirty ? ' | Local changes' : ' | Clean'));
+                      setUpdateState(body.state || null);
                     }).catch(e => setUpdateInfo(String(e)));
                   }}>Check update status</button>
-                  <button type="button" disabled={updateBusy} className="rounded bg-primary px-3 py-2 text-xs text-primary-foreground disabled:opacity-50" onClick={() => {
-                    if (!window.confirm('Build an update from GitHub and restart this local Board if successful? Save work before proceeding.')) return;
+                  <button type="button" disabled={updateBusy || activeUpdate || !updateConnected} className="rounded bg-primary px-3 py-2 text-xs text-primary-foreground disabled:opacity-50" onClick={() => {
+                    if (!window.confirm('Install the GitHub update and restart this Board? Save work first.')) return;
                     setUpdateBusy(true);
                     void fetch('/api/self-update/install', { method: 'POST', headers: { 'Content-Type': 'application/json' } }).then(async r => {
                       const body = await r.json();
                       if (!r.ok) throw new Error(body.error || 'Update could not start');
                       setUpdateInfo(body.message);
-                    }).catch(e => setUpdateInfo(String(e))).finally(() => setUpdateBusy(false));
-                  }}>{updateBusy ? 'Starting…' : 'Install update'}</button>
+                    }).catch(e => setUpdateInfo(String(e))).finally(() => {
+                      // The background status poll owns the busy flag after launch.
+                    });
+                  }}>{updateBusy || activeUpdate ? 'Update in progress…' : 'Install update'}</button>
                 </div>
-                {updateInfo && <p className="mt-2 whitespace-pre-wrap text-xs" role="status">{updateInfo}</p>}
+                <div role="status" aria-live="polite" className="text-xs">
+                  <div className="flex justify-between gap-2"><span>{phaseNames[phase] || phase}</span><span className="tabular-nums">{updateState?.startedAt ? elapsedLabel : ''}</span></div>
+                  <div className="text-muted-foreground mt-1">{updateConnected ? 'Connected' : 'Reconnecting to Board…'}</div>
+                  {updateState?.to && <div className="text-muted-foreground">Target: {updateState.to.slice(0, 7)}</div>}
+                  {updateState?.error && <div className="text-red-400 break-words mt-1">{updateState.error}</div>}
+                  {['complete','rolled-back','failed','manual-recovery-required'].includes(phase) && <div className="mt-1 font-semibold">{phaseNames[phase]}</div>}
+                </div>
+                {updateInfo && <p className="whitespace-pre-wrap text-xs">{updateInfo}</p>}
               </div>
               {error && (
                 <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
