@@ -436,6 +436,8 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
   const [githubMergeBusy, setGithubMergeBusy] = useState(false);
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [boardUpdate, setBoardUpdate] = useState<{eligible: boolean; branch?: string; reason?: string} | null>(null);
+  const [boardUpdateBusy, setBoardUpdateBusy] = useState(false);
   const [prLoading, setPrLoading] = useState(false);
   const [prError, setPrError] = useState<string | null>(null);
   const [mergeResult, setMergeResult] = useState<string | null>(null);
@@ -474,6 +476,7 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
     setPrError(null);
     setMergeResult(null);
     setSyncResult(null);
+    setBoardUpdate(null);
     setMergeLoading(false);
     setMergeError(null);
     setShowWorktreeConfirm(false);
@@ -489,6 +492,7 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
 
     // Check if repo has a git remote (for showing Create PR vs Merge to main)
     api.getGitInfo(taskId).then((info) => setHasRemote(info.hasRemote)).catch(() => setHasRemote(false));
+    api.boardUpdateEligibility(taskId).then(setBoardUpdate).catch(() => setBoardUpdate(null));
     api.getGithubPR(taskId).then(({ pr }) => {
       setPrUrl(pr?.url || null);
       setGithubPrState(pr?.state || null);
@@ -888,6 +892,20 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
                       }
                     }} className="flex shrink-0 items-center rounded-md border border-border px-2.5 py-1 text-xs font-medium disabled:opacity-50">
                       {syncBusy ? 'Syncing...' : 'Sync Local'}
+                    </button>
+                  )}
+                  {githubPrState === 'MERGED' && boardUpdate?.eligible && (
+                    <button type="button" disabled={boardUpdateBusy} onClick={async () => {
+                      if (!window.confirm('Update this running AI Agent Board from merged GitHub PR? Board will restart after preparing the update.')) return;
+                      setBoardUpdateBusy(true);
+                      setPrError(null);
+                      try {
+                        const response = await api.installBoardUpdateFromPR(task.id);
+                        setSyncResult(response.message);
+                      } catch (error) { setPrError(error instanceof Error ? error.message : String(error)); }
+                      finally { setBoardUpdateBusy(false); }
+                    }} className="flex shrink-0 items-center rounded-md border border-border px-2.5 py-1 text-xs font-medium disabled:opacity-50">
+                      {boardUpdateBusy ? 'Preparing update...' : 'Update Board'}
                     </button>
                   )}
                   {syncResult && <span className="text-xs text-emerald-500">Synced: {syncResult}</span>}
