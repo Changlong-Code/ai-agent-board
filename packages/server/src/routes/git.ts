@@ -1,3 +1,5 @@
+import { boardUpdateReadiness, launchBoardUpdate } from './self-update.js';
+import { findGithubRemote } from '../services/github-pr.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getGithubPr, mergeGithubPr, syncMergedGithubPr } from '../services/github-pr.js';
@@ -86,6 +88,37 @@ export function createGitRouter(repo: TaskRepository, agentManager: AgentManager
     try {
       const result = syncMergedGithubPr(task.repoPath, task.branchName, task.baseBranch || 'main', req.body?.confirmed === true);
       res.json(result);
+    } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : String(error) }); }
+  }));
+
+  const boardUpdateEligible = async (id: string) => {
+    const task = await repo.getById(id);
+    if (!task || !task.repoPath || !task.branchName) throw new Error('Task has no valid Git repository and branch');
+    if (agentManager.isRunning(task.id)) throw new Error('Agent is still running');
+    const ready = boardUpdateReadiness();
+    const pr = getGithubPr(task.repoPath, task.branchName, task.baseBranch || 'main');
+    if (!pr || pr.state !== 'MERGED') throw new Error('Task PR has not been merged on GitHub');
+    if (pr.baseRefName !== ready.branch) throw new Error('PR target differs from active Board branch');
+    const boardRepo = findGithubRemote(ready.root).repository;
+    const taskRepo = findGithubRemote(task.repoPath).repository;
+    if (boardRepo.toLowerCase() !== taskRepo.toLowerCase()) throw new Error('Task PR targets a different GitHub repository');
+    return { ready, pr };
+  };
+
+  router.get('/:id/board-update-eligibility', asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { ready, pr } = await boardUpdateEligible(paramId(req));
+      res.json({ eligible: true, branch: ready.branch, prUrl: pr.url });
+    } catch (error) {
+      res.json({ eligible: false, reason: error instanceof Error ? error.message : String(error) });
+    }
+  }));
+
+  router.post('/:id/install-board-update', asyncHandler(async (req: Request, res: Response) => {
+    if (req.body?.confirmed !== true) { res.status(400).json({ error: 'Explicit update confirmation required' }); return; }
+    try {
+      await boardUpdateEligible(paramId(req));
+      res.status(202).json(launchBoardUpdate());
     } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : String(error) }); }
   }));
 
