@@ -27,6 +27,7 @@ import {
 import type { Task, AgentEvent, AgentEventType } from '@/types';
 import { getAgentDisplay } from '@/lib/agent-config';
 import { TerminalView } from './TerminalView';
+import { DevelopmentModeControl } from './DevelopmentModeControl';
 import { api, connectWS } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
@@ -670,6 +671,7 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
             </div>
           )}
 
+          <DevelopmentModeControl taskId={task.id} isRunning={isActive} />
           {/* Header */}
           <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2 lg:py-3">
             <div className="min-w-0 flex-1">
