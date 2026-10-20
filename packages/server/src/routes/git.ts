@@ -1,3 +1,4 @@
+import { getGithubPr, mergeGithubPr } from '../services/github-pr.js';
 import { Router, Request, Response } from 'express';
 import { execFileSync } from 'child_process';
 import type { TaskRepository } from '../repositories/types.js';
@@ -51,6 +52,27 @@ export function createGitRouter(repo: TaskRepository, agentManager: AgentManager
     } catch (err: unknown) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to create PR' });
     }
+  }));
+
+  router.get('/:id/github-pr', asyncHandler(async (req: Request, res: Response) => {
+    const task = await repo.getById(paramId(req));
+    if (!task) { res.status(404).json({ error: 'task not found' }); return; }
+    if (!task.repoPath || !task.branchName) { res.json({ pr: null }); return; }
+    try { res.json({ pr: getGithubPr(task.repoPath, task.branchName) }); }
+    catch (error) { res.status(503).json({ error: error instanceof Error ? error.message : String(error) }); }
+  }));
+
+  router.post('/:id/merge-github-pr', asyncHandler(async (req: Request, res: Response) => {
+    const task = await repo.getById(paramId(req));
+    if (!task) { res.status(404).json({ error: 'task not found' }); return; }
+    if (!task.repoPath || !task.branchName) {
+      res.status(400).json({ error: 'task has no GitHub branch' }); return;
+    }
+    if (agentManager.isRunning(task.id)) { res.status(409).json({ error: 'agent is running' }); return; }
+    try {
+      const pr = mergeGithubPr(task.repoPath, task.branchName, task.baseBranch || 'main', req.body?.confirmed === true);
+      res.json({ pr });
+    } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : String(error) }); }
   }));
 
   // POST /api/tasks/:id/cleanup-worktree — remove worktree after done
