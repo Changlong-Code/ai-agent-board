@@ -1,3 +1,4 @@
+import { ensureTaskMode, requestModeUpgrade, decideModeUpgrade, isDevelopmentMode } from '../services/development-policy.js';
 import { rejectDisabledExecution } from './helpers.js';
 import { Router, Request, Response } from 'express';
 import path from 'path';
@@ -22,6 +23,29 @@ export function createTaskRouter(repo: TaskRepository, agentManager: AgentManage
     const project = await getProjectForRequest(projectRepo, req.query.projectId);
     if (!project) { res.status(404).json({ error: 'project not found' }); return; }
     res.json(await repo.getAll(includeArchived, project.id));
+  }));
+
+  // Task-specific mode snapshot. Upgrades are only applied after explicit approval.
+  router.get('/:id/development-mode', asyncHandler(async (req: Request, res: Response) => {
+    const task = await repo.getById(paramId(req));
+    if (!task) { res.status(404).json({ error: 'task not found' }); return; }
+    res.json(ensureTaskMode(task.id));
+  }));
+  router.post('/:id/development-mode/request', asyncHandler(async (req: Request, res: Response) => {
+    const task = await repo.getById(paramId(req));
+    if (!task) { res.status(404).json({ error: 'task not found' }); return; }
+    if (agentManager.isRunning(task.id)) { res.status(409).json({ error: 'Pause task before requesting an upgrade' }); return; }
+    if (!isDevelopmentMode(req.body.mode)) { res.status(400).json({ error: 'Invalid development mode' }); return; }
+    try { res.json(requestModeUpgrade(task.id, req.body.mode)); }
+    catch (err) { res.status(409).json({ error: (err as Error).message }); }
+  }));
+  router.post('/:id/development-mode/decision', asyncHandler(async (req: Request, res: Response) => {
+    const task = await repo.getById(paramId(req));
+    if (!task) { res.status(404).json({ error: 'task not found' }); return; }
+    if (agentManager.isRunning(task.id)) { res.status(409).json({ error: 'Pause task before approving an upgrade' }); return; }
+    if (typeof req.body.approve !== 'boolean') { res.status(400).json({ error: 'approve must be a boolean' }); return; }
+    try { res.json(decideModeUpgrade(task.id, req.body.approve)); }
+    catch (err) { res.status(409).json({ error: (err as Error).message }); }
   }));
 
   // GET /api/tasks/archived
@@ -51,6 +75,7 @@ export function createTaskRouter(repo: TaskRepository, agentManager: AgentManage
     const task = buildTask({ ...body, externalSource: idempotencyKey ? (req.body.externalSource || 'api') : req.body.externalSource, externalKey: idempotencyKey || req.body.externalKey, provenance: sanitizeProvenance(req.body.provenance) });
     const creation = await repo.createIdempotent(task);
     if (!creation.created) { res.status(200).set('Idempotent-Replay', 'true').json(creation.task); return; }
+    ensureTaskMode(task.id);
     broadcastTaskUpdate(task);
 
     const { autoRun } = req.body;
@@ -115,6 +140,7 @@ export function createTaskRouter(repo: TaskRepository, agentManager: AgentManage
     for (const def of taskDefs) {
       const task = buildTask(def);
       await repo.create(task);
+      ensureTaskMode(task.id);
       broadcastTaskUpdate(task);
       created.push(task);
     }
