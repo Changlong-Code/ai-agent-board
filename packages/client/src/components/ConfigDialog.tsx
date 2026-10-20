@@ -43,6 +43,9 @@ export function ConfigDialog({ open, config, onClose, onSubmit }: ConfigDialogPr
         setUpdateConnected(true);
         setUpdateState(info.state || null);
         setUpdateBusy(info.busy);
+        if (['complete', 'up-to-date', 'rolled-back', 'failed', 'manual-recovery-required'].includes(info.state?.phase || '')) {
+          setUpdateInfo(previous => previous.startsWith('Update preparation started.') ? '' : previous);
+        }
       } catch {
         if (!disposed) setUpdateConnected(false);
       }
@@ -55,6 +58,15 @@ export function ConfigDialog({ open, config, onClose, onSubmit }: ConfigDialogPr
 
   const phase = updateState?.phase || 'idle';
   const activeUpdate = ['checking','preparing','awaiting-stop','installing','restarting','rolling-back'].includes(phase);
+  const terminalUpdate = ['complete','up-to-date','failed','rolled-back','manual-recovery-required'].includes(phase);
+  // A terminal result can be published before the updater releases its installer
+  // lock (e.g. while cleaning its staging worktree). Keep install disabled, but
+  // describe that short cleanup rather than claiming the update is still running.
+  const installButtonLabel = !updateConnected ? 'Reconnecting…'
+    : terminalUpdate && updateBusy ? 'Finishing cleanup…'
+    : activeUpdate ? 'Update in progress…'
+    : updateBusy ? 'Starting updater…'
+    : 'Install update';
   const phaseNames: Record<string, string> = {
     idle: 'Ready', checking: 'Checking GitHub', preparing: 'Preparing and building',
     'awaiting-stop': 'Safely stopping Board', installing: 'Installing',
@@ -173,11 +185,11 @@ export function ConfigDialog({ open, config, onClose, onSubmit }: ConfigDialogPr
                     }).catch(e => setUpdateInfo(String(e))).finally(() => {
                       // The background status poll owns the busy flag after launch.
                     });
-                  }}>{updateBusy || activeUpdate ? 'Update in progress…' : 'Install update'}</button>
+                  }}>{installButtonLabel}</button>
                 </div>
                 <div role="status" aria-live="polite" className="text-xs">
                   <div className="flex justify-between gap-2"><span>{phaseNames[phase] || phase}</span><span className="tabular-nums">{updateState?.startedAt ? elapsedLabel : ''}</span></div>
-                  <div className="text-muted-foreground mt-1">{updateConnected ? 'Connected' : 'Reconnecting to Board…'}</div>
+                  <div className="text-muted-foreground mt-1">{updateConnected ? (terminalUpdate && updateBusy ? 'Connected · finishing cleanup' : 'Connected') : 'Reconnecting to Board…'}</div>
                   {updateState?.to && <div className="text-muted-foreground">Target: {updateState.to.slice(0, 7)}</div>}
                   {updateState?.error && <div className="text-red-400 break-words mt-1">{updateState.error}</div>}
                   {['complete','rolled-back','failed','manual-recovery-required'].includes(phase) && <div className="mt-1 font-semibold">{phaseNames[phase]}</div>}
