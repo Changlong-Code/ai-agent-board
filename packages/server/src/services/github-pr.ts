@@ -67,3 +67,53 @@ export function mergeGithubPr(cwd: string, branch: string, base: string, confirm
   if (!merged || merged.state !== 'MERGED') throw new Error('GitHub did not confirm the PR as merged.');
   return merged;
 }
+
+/**
+ * Explicit, non-destructive synchronization of a merged GitHub PR's base
+ * branch into a separate local project clone. Never rebase, force reset,
+ * auto-stash, or rewrite a working tree.
+ */
+export function syncMergedGithubPr(cwd: string, headBranch: string, baseBranch: string,
+  confirmed: boolean, run: Run = defaultRun): { branch: string; commit: string; changed: boolean } {
+  if (!confirmed) throw new Error('Confirm local synchronization before changing branches.');
+  const pr = getGithubPr(cwd, headBranch, baseBranch, run);
+  if (!pr || pr.state !== 'MERGED') throw new Error('GitHub PR must be merged before local synchronization.');
+  if (pr.headRefName !== headBranch || pr.baseRefName !== baseBranch)
+    throw new Error('GitHub PR branch does not match this task.');
+
+  const currentBranch = run('git', ['branch', '--show-current'], cwd);
+  if (!currentBranch) throw new Error('Cannot synchronize a detached HEAD.');
+  if (run('git', ['status', '--porcelain'], cwd)) {
+    throw new Error('Local changes detected. Commit, stash or remove them manually before synchronization.');
+  }
+
+  const { name: remoteName } = findGithubRemote(cwd, run);
+  run('git', ['fetch', '--no-tags', remoteName, baseBranch], cwd);
+  const trackingRef = 'refs/remotes/' + remoteName + '/' + baseBranch;
+  const remoteCommit = run('git', ['rev-parse', '--verify', trackingRef], cwd);
+  const localRef = 'refs/heads/' + baseBranch;
+  let previousCommit: string | null = null;
+  let exists = false;
+  try {
+    run('git', ['show-ref', '--verify', '--quiet', localRef], cwd);
+    exists = true;
+  } catch { /* Local base branch not yet created. */ }
+
+  if (exists) {
+    // Reject divergence before switching the checkout; no history rewrite.
+    const localCommit = run('git', ['rev-parse', '--verify', localRef], cwd);
+    previousCommit = localCommit;
+    if (localCommit !== remoteCommit) {
+      try { run('git', ['merge-base', '--is-ancestor', localRef, trackingRef], cwd); }
+      catch { throw new Error('Local base branch diverged from GitHub. Resolve manually; no changes applied.'); }
+    }
+    if (currentBranch !== baseBranch) run('git', ['switch', baseBranch], cwd);
+    if (localCommit !== remoteCommit) run('git', ['merge', '--ff-only', trackingRef], cwd);
+  } else {
+    run('git', ['switch', '--track', '-c', baseBranch, remoteName + '/' + baseBranch], cwd);
+  }
+
+  const commit = run('git', ['rev-parse', 'HEAD'], cwd);
+  if (commit !== remoteCommit) throw new Error('Local branch differs from the fetched remote after synchronization.');
+  return { branch: baseBranch, commit, changed: currentBranch !== baseBranch || !exists || previousCommit !== remoteCommit };
+}
