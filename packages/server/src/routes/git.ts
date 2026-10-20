@@ -15,10 +15,14 @@ export function createGitRouter(repo: TaskRepository, agentManager: AgentManager
     if (!task.repoPath) { res.json({ hasRemote: false }); return; }
 
     try {
-      const remote = execFileSync('git', ['remote', 'get-url', 'source'], {
-        cwd: task.repoPath, stdio: 'pipe',
-      }).toString().trim();
-      res.json({ hasRemote: !!remote });
+      const remotes = execFileSync('git', ['remote'], { cwd: task.repoPath, stdio: 'pipe' }).toString().split(/\r?\n/).filter(Boolean);
+      const hasRemote = remotes.some(name => {
+        try {
+          const url = execFileSync('git', ['remote', 'get-url', name], { cwd: task.repoPath, stdio: 'pipe' }).toString().trim();
+          return /github\.com[:/]/i.test(url);
+        } catch { return false; }
+      });
+      res.json({ hasRemote });
     } catch {
       res.json({ hasRemote: false });
     }
