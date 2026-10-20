@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { spawn, spawnSync } = require('node:child_process');
+const { writeUpdateState } = require('./update-state.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const HOME = path.resolve(process.env.AGENTBOARD_HOME || process.env.ORIGINAL_BOARD_HOME ||
@@ -29,9 +30,7 @@ function status(phase, extra = {}) {
     finishedAt: completed ? now : null,
   };
   fs.mkdirSync(UPDATES, { recursive: true });
-  const tmp = STATE + '.tmp-' + process.pid;
-  fs.writeFileSync(tmp, JSON.stringify(currentState, null, 2), 'utf8');
-  fs.renameSync(tmp, STATE);
+  writeUpdateState(STATE, currentState, { onCleanupError: error => log('state temp cleanup: ' + error.message) });
   process.stdout.write('[update] ' + phase + '\n');
 }
 function log(text) {
