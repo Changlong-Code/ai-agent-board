@@ -873,6 +873,24 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
                     </button>
                   )}
                   {githubPrState === 'MERGED' && <span className="text-xs text-emerald-500">GitHub PR merged</span>}
+                  {githubPrState === 'MERGED' && !syncResult && (
+                    <button type="button" disabled={syncBusy} onClick={async () => {
+                      if (!window.confirm('Synchronize the merged GitHub base branch to this local project?')) return;
+                      setSyncBusy(true);
+                      setPrError(null);
+                      try {
+                        const result = await api.syncMergedPR(task.id);
+                        setSyncResult(result.branch + ' @ ' + result.commit.slice(0, 7));
+                      } catch (error) {
+                        setPrError(error instanceof Error ? error.message : String(error));
+                      } finally {
+                        setSyncBusy(false);
+                      }
+                    }} className="flex shrink-0 items-center rounded-md border border-border px-2.5 py-1 text-xs font-medium disabled:opacity-50">
+                      {syncBusy ? 'Syncing...' : 'Sync Local'}
+                    </button>
+                  )}
+                  {syncResult && <span className="text-xs text-emerald-500">Synced: {syncResult}</span>}
                   {!mergeResult && task.branchName && onMergeLocal && (
                     <button
                       onClick={async () => {
