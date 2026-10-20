@@ -16,6 +16,7 @@ export function ConfigDialog({ open, config, onClose, onSubmit }: ConfigDialogPr
   const [developmentMode, setDevelopmentMode] = useState<'low' | 'balanced' | 'high'>('low');
   const [policySaved, setPolicySaved] = useState('');
   const [error, setError] = useState('');
+  const [updateInfo, setUpdateInfo] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -107,6 +108,18 @@ export function ConfigDialog({ open, config, onClose, onSubmit }: ConfigDialogPr
                 <p className="mt-2 text-xs text-muted-foreground">New tasks inherit this mode. Upgrades always require approval. Provider-level reasoning control is not guaranteed.</p>
                 <button type="button" className="mt-2 rounded bg-primary px-3 py-2 text-xs text-primary-foreground" onClick={() => { void api.setDevelopmentMode(developmentMode).then(() => setPolicySaved('Saved')).catch(e => setError(String(e))); }}>Save development mode</button>
                 {policySaved && <span role="status" className="ml-2 text-xs">{policySaved}</span>}
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <div className="text-sm font-semibold">Self Update (Windows)</div>
+                <p className="my-2 text-xs text-muted-foreground">Check the current Git branch and local changes. The updater must run after Board is closed.</p>
+                <button type="button" className="rounded border border-border px-3 py-2 text-xs" onClick={() => {
+                  void fetch('/api/self-update/status').then(async r => {
+                    const body = await r.json();
+                    if (!r.ok) throw new Error(body.detail || body.error);
+                    setUpdateInfo('Branch: ' + body.branch + ' | Commit: ' + body.current + (body.dirty ? ' | Local changes: update blocked' : ' | Clean') + '\\nTo check for updates: node windows\\\\self-update.cjs');
+                  }).catch(e => setUpdateInfo(String(e)));
+                }}>Check local update readiness</button>
+                {updateInfo && <p className="mt-2 whitespace-pre-wrap text-xs" role="status">{updateInfo}</p>}
               </div>
               {error && (
                 <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
