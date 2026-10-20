@@ -891,7 +891,7 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
                     </button>
                   )}
                   {syncResult && <span className="text-xs text-emerald-500">Synced: {syncResult}</span>}
-                  {!mergeResult && task.branchName && onMergeLocal && (
+                  {!mergeResult && githubPrState !== 'MERGED' && task.branchName && onMergeLocal && (
                     <button
                       onClick={async () => {
                         setMergeLoading(true);
