@@ -162,6 +162,11 @@ async function install() {
     status('awaiting-stop');
     fs.writeFileSync(STOP, JSON.stringify({ id, root: ROOT, phase: 'prepared', requestedAt: Date.now() }), { flag: 'wx' });
     await waitForUnlocked(90000);
+    // Remove the stop request before relaunching. Otherwise the new launcher
+    // reads the stale request and shuts itself down immediately.
+    const stopRequest = JSON.parse(fs.readFileSync(STOP, 'utf8'));
+    if (stopRequest.id !== id || stopRequest.root !== ROOT) throw new Error('Stop request ownership changed.');
+    fs.unlinkSync(STOP);
     // Verify the repository has not been changed by an unrelated process.
     const fresh = cleanProject();
     if (fresh.old !== prior || fresh.branch !== state.branch) throw new Error('Repository changed while preparing update.');
