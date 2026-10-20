@@ -156,10 +156,11 @@ export function TaskDialog({ open, onClose, onSubmit, editTask, onEditSubmit, hi
     }
     setPathError('');
 
-    // Auto-generate branch name from title if using worktree and no custom name set
+    // An existing local branch may be used for GitHub PRs without a worktree.
+    // Only auto-generate a branch name when the task creates a worktree.
     const effectiveBranch = useWorktree
       ? (branchName.trim() || `task/${slugify(title.trim())}`)
-      : undefined;
+      : (branchName.trim() || undefined);
 
     const repoFields = {
       repoPath: trimmedPath,
@@ -533,19 +534,21 @@ export function TaskDialog({ open, onClose, onSubmit, editTask, onEditSubmit, hi
                       </label>
                     </div>
                   </div>
-                  {useWorktree && (
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Branch Name</label>
-                      <input
-                        type="text"
-                        value={branchName}
-                        onChange={(e) => setBranchName(e.target.value)}
-                        placeholder={title.trim() ? `task/${slugify(title.trim())}` : 'task/my-feature'}
-                        className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-mono placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
-                      />
-                      <p className="mt-0.5 text-[10px] text-muted-foreground/60">Leave blank to auto-generate from title</p>
-                    </div>
-                  )}
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      Branch Name {useWorktree ? '(new or existing)' : '(existing, optional)'}
+                    </label>
+                    <input
+                      type="text"
+                      value={branchName}
+                      onChange={(e) => setBranchName(e.target.value)}
+                      placeholder={useWorktree ? (title.trim() ? `task/${slugify(title.trim())}` : 'task/my-feature') : 'test/my-existing-branch'}
+                      className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-mono placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
+                    />
+                    <p className="mt-0.5 text-[10px] text-muted-foreground/60">
+                      {useWorktree ? 'Leave blank to create a new task branch.' : 'Use an existing branch for GitHub PR; leave blank if no branch is needed.'}
+                    </p>
+                  </div>
                 </div>
 
               </div>

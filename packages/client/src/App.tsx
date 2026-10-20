@@ -526,6 +526,42 @@ function readRoute(): RouteState {
   return { view: 'board' };
 }
 
+function UpdateResultNotice() {
+  const [notice, setNotice] = useState<{ id: string; phase: string; error?: string } | null>(null);
+  useEffect(() => {
+    let active = true;
+    const check = async () => {
+      try {
+        const response = await fetch('/api/self-update/status', { cache: 'no-store' });
+        if (!response.ok) return;
+        const payload = await response.json() as { state?: { id?: string; phase?: string; error?: string; finishedAt?: string } };
+        const state = payload.state;
+        if (!active || !state?.id || !state.finishedAt ||
+            !['complete','failed','rolled-back','manual-recovery-required'].includes(state.phase || '')) return;
+        const id = state.id + ':' + state.phase;
+        if (sessionStorage.getItem('board-last-update-notice') === id) return;
+        setNotice({ id, phase: state.phase || '', error: state.error });
+      } catch { /* The Board may be restarting: retry on the next poll. */ }
+    };
+    void check();
+    const timer = window.setInterval(() => { void check(); }, 3000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+  if (!notice) return null;
+  const success = notice.phase === 'complete';
+  return (
+    <div role="alert" className="fixed bottom-4 right-4 z-[100] max-w-sm rounded-lg border border-border bg-card p-4 shadow-xl">
+      <div className="font-semibold">{success ? 'AI Agent Board update completed' : 'AI Agent Board update needs attention'}</div>
+      <p className="mt-1 text-sm">{success ? 'New version installed and Board restarted successfully.' : notice.phase === 'rolled-back' ? 'The previous version was restored.' : 'Review the update status and logs before retrying.'}</p>
+      {notice.error && <p className="mt-1 text-xs text-red-400 break-words">{notice.error}</p>}
+      <button type="button" className="mt-2 rounded border border-border px-3 py-1 text-xs" onClick={() => {
+        sessionStorage.setItem('board-last-update-notice', notice.id);
+        setNotice(null);
+      }}>Dismiss</button>
+    </div>
+  );
+}
+
 export function App() {
   const { theme, toggleTheme } = useTheme();
   const {
@@ -571,6 +607,7 @@ export function App() {
 
   if (route.view === 'projects' || (!loading && !selectedProject)) {
     return (
+      <><UpdateResultNotice />
       <ProjectsPage
         projects={projects}
         config={config}
@@ -590,7 +627,7 @@ export function App() {
         onOpenProject={openProject}
         theme={theme}
         toggleTheme={toggleTheme}
-      />
+      /></>
     );
   }
 
@@ -603,12 +640,13 @@ export function App() {
   }
 
   return (
+    <><UpdateResultNotice />
     <BoardPage
       project={selectedProject}
       theme={theme}
       toggleTheme={toggleTheme}
       onBackToProjects={() => navigate('/projects')}
       initialTaskId={route.view === 'board' ? route.taskId : undefined}
-    />
+    /></>
   );
 }

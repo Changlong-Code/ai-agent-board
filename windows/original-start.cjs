@@ -136,6 +136,35 @@ async function main() {
       child.on('error', error => { console.error(`${name}: ${error.message}`); void stop(1); });
       child.on('exit', code => { if (!stopping) { console.error(`${name} stopped (${code}); see ${home}/logs`); void stop(1); } });
     }
+    const updateStopFile = path.join(home, 'update-stop-request.json');
+    const updateAckFile = path.join(home, 'update-stop-ack.json');
+    const pathsEqual = (a, b) => {
+      if (typeof a !== 'string' || typeof b !== 'string') return false;
+      const normalize = p => path.normalize(path.resolve(p)).replace(/[\\/]+$/, '').toLowerCase();
+      return normalize(a) === normalize(b);
+    };
+    let updateStopping = false;
+    const checkUpdateRequest = () => {
+      if (stopping || updateStopping || !fs.existsSync(updateStopFile)) return;
+      try {
+        const request = JSON.parse(fs.readFileSync(updateStopFile, 'utf8'));
+        if (request.phase !== 'prepared' || !pathsEqual(request.root, ROOT) ||
+            typeof request.id !== 'string' || !Number.isFinite(request.requestedAt) ||
+            Math.abs(Date.now() - request.requestedAt) > 120000) {
+          console.warn('Ignoring update stop request with mismatched root, phase or timestamp.');
+          return;
+        }
+        updateStopping = true;
+        fs.writeFileSync(updateAckFile, JSON.stringify({
+          id: request.id, launcherPid: process.pid, root: ROOT, acceptedAt: Date.now()
+        }), 'utf8');
+        clearInterval(updatePoller);
+        console.log('Update request acknowledged; stopping this Board instance.');
+        void stop(0);
+      } catch (error) { console.error('Update request invalid:', error.message); }
+    };
+    const updatePoller = setInterval(checkUpdateRequest, 750);
+    process.on('exit', () => clearInterval(updatePoller));
     run('server', [server]);
     run('client', [vite, 'preview', '--config', path.join(__dirname, 'original-vite.config.mjs')]);
     const url = `http://127.0.0.1:${ports.boardPort}`;

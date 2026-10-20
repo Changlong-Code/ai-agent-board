@@ -432,6 +432,12 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [prUrl, setPrUrl] = useState<string | null>(null);
+  const [githubPrState, setGithubPrState] = useState<string | null>(null);
+  const [githubMergeBusy, setGithubMergeBusy] = useState(false);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [boardUpdate, setBoardUpdate] = useState<{eligible: boolean; branch?: string; reason?: string} | null>(null);
+  const [boardUpdateBusy, setBoardUpdateBusy] = useState(false);
   const [prLoading, setPrLoading] = useState(false);
   const [prError, setPrError] = useState<string | null>(null);
   const [mergeResult, setMergeResult] = useState<string | null>(null);
@@ -469,6 +475,8 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
     setPrLoading(false);
     setPrError(null);
     setMergeResult(null);
+    setSyncResult(null);
+    setBoardUpdate(null);
     setMergeLoading(false);
     setMergeError(null);
     setShowWorktreeConfirm(false);
@@ -484,6 +492,15 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
 
     // Check if repo has a git remote (for showing Create PR vs Merge to main)
     api.getGitInfo(taskId).then((info) => setHasRemote(info.hasRemote)).catch(() => setHasRemote(false));
+    api.boardUpdateEligibility(taskId).then(setBoardUpdate).catch(() => setBoardUpdate(null));
+    api.getGithubPR(taskId).then(({ pr }) => {
+      setPrUrl(pr?.url || null);
+      setGithubPrState(pr?.state || null);
+    }).catch((error) => {
+      setPrUrl(null);
+      setGithubPrState('LOOKUP_ERROR');
+      setPrError('Could not load GitHub PR: ' + (error instanceof Error ? error.message : String(error)));
+    });
 
     // Listen for live agent events via WS
     const disconnect = connectWS((msg) => {
@@ -813,16 +830,16 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
               )}
 
               {/* PR / Cleanup actions — show when task is done or complete */}
-              {(task.agentStatus === 'complete' || task.columnId === 'done') && (
+              {(task.agentStatus === 'complete' || task.columnId === 'review' || task.columnId === 'done') && (
                 <div className="flex items-center gap-2 overflow-x-auto pb-0.5 pt-1">
-                  {!prUrl && onCreatePR && hasRemote === true && (
+                  {!prUrl && githubPrState !== 'LOOKUP_ERROR' && onCreatePR && hasRemote === true && (
                     <button
                       onClick={async () => {
                         setPrLoading(true);
                         setPrError(null);
                         try {
                           const url = await onCreatePR(task.id);
-                          if (url) setPrUrl(url);
+                          if (url) { setPrUrl(url); setGithubPrState('OPEN'); }
                         } catch (err: unknown) {
                           setPrError((err as Error).message || 'Failed to create PR');
                         }
@@ -846,7 +863,54 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
                       View PR
                     </a>
                   )}
-                  {!mergeResult && task.branchName && onMergeLocal && (
+                  {prUrl && githubPrState === 'OPEN' && (
+                    <button type="button" disabled={githubMergeBusy} onClick={async () => {
+                      if (!window.confirm('Merge this Pull Request on GitHub into ' + (task.baseBranch || 'main') + '?')) return;
+                      setGithubMergeBusy(true); setPrError(null);
+                      try {
+                        const result = await api.mergeGithubPR(task.id);
+                        setGithubPrState(result.pr.state);
+                        void api.boardUpdateEligibility(task.id).then(setBoardUpdate).catch(() => setBoardUpdate(null));
+                      } catch (error) { setPrError((error as Error).message); }
+                      finally { setGithubMergeBusy(false); }
+                    }} className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50">
+                      <GitMerge className="h-3 w-3" /> {githubMergeBusy ? 'Merging PR…' : 'Merge GitHub PR'}
+                    </button>
+                  )}
+                  {githubPrState === 'MERGED' && <span className="text-xs text-emerald-500">GitHub PR merged</span>}
+                  {githubPrState === 'MERGED' && !syncResult && (
+                    <button type="button" disabled={syncBusy} onClick={async () => {
+                      if (!window.confirm('Synchronize the merged GitHub base branch to this local project?')) return;
+                      setSyncBusy(true);
+                      setPrError(null);
+                      try {
+                        const result = await api.syncMergedPR(task.id);
+                        setSyncResult(result.branch + ' @ ' + result.commit.slice(0, 7));
+                      } catch (error) {
+                        setPrError(error instanceof Error ? error.message : String(error));
+                      } finally {
+                        setSyncBusy(false);
+                      }
+                    }} className="flex shrink-0 items-center rounded-md border border-border px-2.5 py-1 text-xs font-medium disabled:opacity-50">
+                      {syncBusy ? 'Syncing...' : 'Sync Local'}
+                    </button>
+                  )}
+                  {githubPrState === 'MERGED' && boardUpdate?.eligible && (
+                    <button type="button" disabled={boardUpdateBusy} onClick={async () => {
+                      if (!window.confirm('Update this running AI Agent Board from merged GitHub PR? Board will restart after preparing the update.')) return;
+                      setBoardUpdateBusy(true);
+                      setPrError(null);
+                      try {
+                        const response = await api.installBoardUpdateFromPR(task.id);
+                        setSyncResult(response.message);
+                      } catch (error) { setPrError(error instanceof Error ? error.message : String(error)); }
+                      finally { setBoardUpdateBusy(false); }
+                    }} className="flex shrink-0 items-center rounded-md border border-border px-2.5 py-1 text-xs font-medium disabled:opacity-50">
+                      {boardUpdateBusy ? 'Preparing update...' : 'Update Board'}
+                    </button>
+                  )}
+                  {syncResult && <span className="text-xs text-emerald-500">Synced: {syncResult}</span>}
+                  {!mergeResult && githubPrState !== 'MERGED' && task.branchName && onMergeLocal && (
                     <button
                       onClick={async () => {
                         setMergeLoading(true);
@@ -863,7 +927,7 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
                       className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border max-lg:min-h-11 border-border bg-muted px-2.5 py-1 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
                     >
                       <GitMerge className="h-3 w-3" />
-                      {mergeLoading ? 'Merging...' : `Merge to ${task.baseBranch || 'main'}`}
+                      {mergeLoading ? 'Merging...' : `Local Merge to ${task.baseBranch || 'main'}`}
                     </button>
                   )}
                   {mergeResult && (

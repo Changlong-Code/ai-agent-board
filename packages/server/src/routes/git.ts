@@ -1,3 +1,9 @@
+import { assertBoardUpdateAuthorization } from '../services/board-update-authorization.js';
+import { boardUpdateReadiness, launchBoardUpdate } from './self-update.js';
+import { findGithubRemote } from '../services/github-pr.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { getGithubPr, mergeGithubPr, syncMergedGithubPr } from '../services/github-pr.js';
 import { Router, Request, Response } from 'express';
 import { execFileSync } from 'child_process';
 import type { TaskRepository } from '../repositories/types.js';
@@ -15,10 +21,14 @@ export function createGitRouter(repo: TaskRepository, agentManager: AgentManager
     if (!task.repoPath) { res.json({ hasRemote: false }); return; }
 
     try {
-      const remote = execFileSync('git', ['remote', 'get-url', 'origin'], {
-        cwd: task.repoPath, stdio: 'pipe',
-      }).toString().trim();
-      res.json({ hasRemote: !!remote });
+      const remotes = execFileSync('git', ['remote'], { cwd: task.repoPath, stdio: 'pipe' }).toString().split(/\r?\n/).filter(Boolean);
+      const hasRemote = remotes.some(name => {
+        try {
+          const url = execFileSync('git', ['remote', 'get-url', name], { cwd: task.repoPath, stdio: 'pipe' }).toString().trim();
+          return /github\.com[:/]/i.test(url);
+        } catch { return false; }
+      });
+      res.json({ hasRemote });
     } catch {
       res.json({ hasRemote: false });
     }
@@ -38,15 +48,80 @@ export function createGitRouter(repo: TaskRepository, agentManager: AgentManager
     }
     try {
       const result = agentManager.createPR(task);
-      // Clean up worktree after successful PR — branch is pushed, directory is no longer needed
-      if (task.worktreePath) {
-        const cleanup = agentManager.removeWorktree(task);
-        if (cleanup.status !== 'blocked') await repo.update(id, { worktreePath: undefined });
-      }
+      // Keep the worktree until the user explicitly cleans it up.
       res.json(result);
     } catch (err: unknown) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to create PR' });
     }
+  }));
+
+  router.get('/:id/github-pr', asyncHandler(async (req: Request, res: Response) => {
+    const task = await repo.getById(paramId(req));
+    if (!task) { res.status(404).json({ error: 'task not found' }); return; }
+    if (!task.repoPath || !task.branchName) { res.json({ pr: null }); return; }
+    try { res.json({ pr: getGithubPr(task.repoPath, task.branchName, task.baseBranch || 'main') }); }
+    catch (error) { res.status(503).json({ error: error instanceof Error ? error.message : String(error) }); }
+  }));
+
+  router.post('/:id/merge-github-pr', asyncHandler(async (req: Request, res: Response) => {
+    const task = await repo.getById(paramId(req));
+    if (!task) { res.status(404).json({ error: 'task not found' }); return; }
+    if (!task.repoPath || !task.branchName) {
+      res.status(400).json({ error: 'task has no GitHub branch' }); return;
+    }
+    if (agentManager.isRunning(task.id)) { res.status(409).json({ error: 'agent is running' }); return; }
+    try {
+      const pr = mergeGithubPr(task.repoPath, task.branchName, task.baseBranch || 'main', req.body?.confirmed === true);
+      res.json({ pr });
+    } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : String(error) }); }
+  }));
+
+  router.post('/:id/sync-merged-pr', asyncHandler(async (req: Request, res: Response) => {
+    const task = await repo.getById(paramId(req));
+    if (!task) { res.status(404).json({ error: 'task not found' }); return; }
+    if (!task.repoPath || !task.branchName) { res.status(400).json({ error: 'task has no repository or branch' }); return; }
+    if (agentManager.isRunning(task.id)) { res.status(409).json({ error: 'Stop the agent before synchronizing.' }); return; }
+    const boardRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../');
+    const localPath = path.resolve(task.repoPath);
+    if (process.platform === 'win32' ? boardRoot.toLowerCase() === localPath.toLowerCase() : boardRoot === localPath) {
+      res.status(409).json({ error: 'Cannot synchronize the running Board repository. Use Self Update for Board itself.' }); return;
+    }
+    try {
+      const result = syncMergedGithubPr(task.repoPath, task.branchName, task.baseBranch || 'main', req.body?.confirmed === true);
+      res.json(result);
+    } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : String(error) }); }
+  }));
+
+  const boardUpdateEligible = async (id: string) => {
+    const task = await repo.getById(id);
+    if (!task || !task.repoPath || !task.branchName) throw new Error('Task has no valid Git repository and branch');
+    if (agentManager.isRunning(task.id)) throw new Error('Agent is still running');
+    const ready = boardUpdateReadiness();
+    const pr = getGithubPr(task.repoPath, task.branchName, task.baseBranch || 'main');
+    if (!pr) throw new Error('Task PR not found on GitHub');
+    assertBoardUpdateAuthorization({
+      taskBranch: task.branchName, taskBase: task.baseBranch || 'main',
+      boardBranch: ready.branch, boardRepository: findGithubRemote(ready.root).repository,
+      taskRepository: findGithubRemote(task.repoPath).repository, pr,
+    });
+    return { ready, pr };
+  };
+
+  router.get('/:id/board-update-eligibility', asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { ready, pr } = await boardUpdateEligible(paramId(req));
+      res.json({ eligible: true, branch: ready.branch, prUrl: pr.url });
+    } catch (error) {
+      res.json({ eligible: false, reason: error instanceof Error ? error.message : String(error) });
+    }
+  }));
+
+  router.post('/:id/install-board-update', asyncHandler(async (req: Request, res: Response) => {
+    if (req.body?.confirmed !== true) { res.status(400).json({ error: 'Explicit update confirmation required' }); return; }
+    try {
+      await boardUpdateEligible(paramId(req));
+      res.status(202).json(launchBoardUpdate());
+    } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : String(error) }); }
   }));
 
   // POST /api/tasks/:id/cleanup-worktree — remove worktree after done

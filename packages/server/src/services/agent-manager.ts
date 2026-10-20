@@ -440,6 +440,16 @@ export class AgentManager {
     return result;
   }
 
+  private detectGithubRemote(cwd: string): string {
+    const remotes = execFileSync('git', ['remote'], { cwd, stdio: 'pipe' }).toString().split(/\r?\n/).filter(Boolean);
+    for (const remote of ['source', 'origin', ...remotes]) {
+      if (!remotes.includes(remote)) continue;
+      const url = execFileSync('git', ['remote', 'get-url', remote], { cwd, stdio: 'pipe' }).toString().trim();
+      if (/github\.com[:/]/i.test(url)) return remote;
+    }
+    throw new Error('No GitHub remote found. Configure a GitHub remote for this project.');
+  }
+
   createPR(task: Task): { url: string } {
     if (!task.repoPath || !task.branchName) {
       throw new Error('Task has no repo path or branch name configured');
@@ -449,11 +459,11 @@ export class AgentManager {
 
     // Check that a remote named 'origin' exists
     try {
-      const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd, stdio: 'pipe' }).toString().trim();
+      const remoteUrl = execFileSync('git', ['remote', 'get-url', this.detectGithubRemote(cwd)], { cwd, stdio: 'pipe' }).toString().trim();
       if (!remoteUrl) throw new Error('empty');
     } catch {
       throw new Error(
-        'No git remote "origin" configured. Push your repo to GitHub first:\n' +
+        'No GitHub remote configured. Push your repo to GitHub first:\n' +
         `  cd ${task.repoPath}\n` +
         '  gh repo create <name> --source=. --push'
       );
@@ -461,7 +471,7 @@ export class AgentManager {
 
     try {
       commitManagedWorktreeChanges(task);
-      execFileSync('git', ['push', '-u', 'origin', task.branchName], { cwd, stdio: 'pipe' });
+      execFileSync('git', ['push', '-u', this.detectGithubRemote(cwd), task.branchName], { cwd, stdio: 'pipe' });
       const prTitle = task.title.replace(/[<>]/g, '').slice(0, 200);
       const result = execFileSync(
         'gh',
