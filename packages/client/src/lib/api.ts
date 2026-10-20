@@ -134,6 +134,8 @@ export const api = {
   getGithubPR: (id: string) => request<{ pr: { url: string; number: number; state: 'OPEN' | 'CLOSED' | 'MERGED'; isDraft: boolean; mergeable: string; reviewDecision: string; baseRefName: string } | null }>(`/tasks/${id}/github-pr`),
   mergeGithubPR: (id: string) => request<{ pr: { url: string; state: string } }>(`/tasks/${id}/merge-github-pr`, { method: 'POST', body: JSON.stringify({ confirmed: true }) }),
 
+  syncMergedPR: (id: string) => request<{ branch: string; commit: string; changed: boolean }>(`/tasks/${id}/sync-merged-pr`, { method: 'POST', body: JSON.stringify({ confirmed: true }) }),
+
   mergeLocal: (id: string) =>
     request<{ merged: boolean; baseBranch: string }>(`/tasks/${id}/merge-local`, { method: 'POST' }),
 
