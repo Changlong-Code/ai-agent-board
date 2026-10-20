@@ -62,6 +62,11 @@ async function request<T>(url: string, opts?: RequestInit): Promise<T> {
 // --- Task CRUD ---
 
 export const api = {
+  getDevelopmentSettings: () => request<{defaultMode: 'low' | 'balanced' | 'high'; upgradeRequiresApproval: boolean}>('/development-settings'),
+  setDevelopmentMode: (defaultMode: 'low' | 'balanced' | 'high') => request<{defaultMode: string}>('/development-settings', { method: 'PATCH', body: JSON.stringify({ defaultMode }) }),
+  getTaskDevelopmentMode: (id: string) => request<{mode: 'low' | 'balanced' | 'high'; approval?: { requestedMode: string; status: string }}>('/tasks/' + encodeURIComponent(id) + '/development-mode'),
+  requestTaskModeUpgrade: (id: string, mode: 'balanced' | 'high') => request('/tasks/' + encodeURIComponent(id) + '/development-mode/request', { method: 'POST', body: JSON.stringify({ mode }) }),
+  decideTaskModeUpgrade: (id: string, approve: boolean) => request('/tasks/' + encodeURIComponent(id) + '/development-mode/decision', { method: 'POST', body: JSON.stringify({ approve }) }),
   // --- Projects ---
   getProjects: () =>
     request<Project[]>('/projects'),
