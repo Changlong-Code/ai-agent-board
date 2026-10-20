@@ -1,3 +1,4 @@
+import { assertBoardUpdateAuthorization } from '../services/board-update-authorization.js';
 import { boardUpdateReadiness, launchBoardUpdate } from './self-update.js';
 import { findGithubRemote } from '../services/github-pr.js';
 import path from 'node:path';
@@ -97,11 +98,11 @@ export function createGitRouter(repo: TaskRepository, agentManager: AgentManager
     if (agentManager.isRunning(task.id)) throw new Error('Agent is still running');
     const ready = boardUpdateReadiness();
     const pr = getGithubPr(task.repoPath, task.branchName, task.baseBranch || 'main');
-    if (!pr || pr.state !== 'MERGED') throw new Error('Task PR has not been merged on GitHub');
-    if (pr.baseRefName !== ready.branch) throw new Error('PR target differs from active Board branch');
-    const boardRepo = findGithubRemote(ready.root).repository;
-    const taskRepo = findGithubRemote(task.repoPath).repository;
-    if (boardRepo.toLowerCase() !== taskRepo.toLowerCase()) throw new Error('Task PR targets a different GitHub repository');
+    assertBoardUpdateAuthorization({
+      taskBranch: task.branchName, taskBase: task.baseBranch || 'main',
+      boardBranch: ready.branch, boardRepository: findGithubRemote(ready.root).repository,
+      taskRepository: findGithubRemote(task.repoPath).repository, pr,
+    });
     return { ready, pr };
   };
 
