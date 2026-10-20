@@ -136,6 +136,19 @@ async function main() {
       child.on('error', error => { console.error(`${name}: ${error.message}`); void stop(1); });
       child.on('exit', code => { if (!stopping) { console.error(`${name} stopped (${code}); see ${home}/logs`); void stop(1); } });
     }
+    const updateStopFile = path.join(home, 'update-stop-request.json');
+    const updatePoller = setInterval(() => {
+      if (stopping || !fs.existsSync(updateStopFile)) return;
+      try {
+        const request = JSON.parse(fs.readFileSync(updateStopFile, 'utf8'));
+        if (request.root === ROOT && request.phase === 'prepared') {
+          clearInterval(updatePoller);
+          console.log('Update prepared; stopping only this Board instance.');
+          void stop(0);
+        }
+      } catch (error) { console.error('Update request invalid:', error.message); }
+    }, 750);
+    process.on('exit', () => clearInterval(updatePoller));
     run('server', [server]);
     run('client', [vite, 'preview', '--config', path.join(__dirname, 'original-vite.config.mjs')]);
     const url = `http://127.0.0.1:${ports.boardPort}`;
