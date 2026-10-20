@@ -432,6 +432,8 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [prUrl, setPrUrl] = useState<string | null>(null);
+  const [githubPrState, setGithubPrState] = useState<string | null>(null);
+  const [githubMergeBusy, setGithubMergeBusy] = useState(false);
   const [prLoading, setPrLoading] = useState(false);
   const [prError, setPrError] = useState<string | null>(null);
   const [mergeResult, setMergeResult] = useState<string | null>(null);
@@ -484,6 +486,10 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
 
     // Check if repo has a git remote (for showing Create PR vs Merge to main)
     api.getGitInfo(taskId).then((info) => setHasRemote(info.hasRemote)).catch(() => setHasRemote(false));
+    api.getGithubPR(taskId).then(({ pr }) => {
+      setPrUrl(pr?.url || null);
+      setGithubPrState(pr?.state || null);
+    }).catch(() => { setPrUrl(null); setGithubPrState(null); });
 
     // Listen for live agent events via WS
     const disconnect = connectWS((msg) => {
@@ -822,7 +828,7 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
                         setPrError(null);
                         try {
                           const url = await onCreatePR(task.id);
-                          if (url) setPrUrl(url);
+                          if (url) { setPrUrl(url); setGithubPrState('OPEN'); }
                         } catch (err: unknown) {
                           setPrError((err as Error).message || 'Failed to create PR');
                         }
@@ -846,6 +852,20 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
                       View PR
                     </a>
                   )}
+                  {prUrl && githubPrState === 'OPEN' && (
+                    <button type="button" disabled={githubMergeBusy} onClick={async () => {
+                      if (!window.confirm('Merge this Pull Request on GitHub into ' + (task.baseBranch || 'main') + '?')) return;
+                      setGithubMergeBusy(true); setPrError(null);
+                      try {
+                        const result = await api.mergeGithubPR(task.id);
+                        setGithubPrState(result.pr.state);
+                      } catch (error) { setPrError((error as Error).message); }
+                      finally { setGithubMergeBusy(false); }
+                    }} className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50">
+                      <GitMerge className="h-3 w-3" /> {githubMergeBusy ? 'Merging PR…' : 'Merge GitHub PR'}
+                    </button>
+                  )}
+                  {githubPrState === 'MERGED' && <span className="text-xs text-emerald-500">GitHub PR merged</span>}
                   {!mergeResult && task.branchName && onMergeLocal && (
                     <button
                       onClick={async () => {
@@ -863,7 +883,7 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
                       className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border max-lg:min-h-11 border-border bg-muted px-2.5 py-1 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
                     >
                       <GitMerge className="h-3 w-3" />
-                      {mergeLoading ? 'Merging...' : `Merge to ${task.baseBranch || 'main'}`}
+                      {mergeLoading ? 'Merging...' : `Local Merge to ${task.baseBranch || 'main'}`}
                     </button>
                   )}
                   {mergeResult && (
