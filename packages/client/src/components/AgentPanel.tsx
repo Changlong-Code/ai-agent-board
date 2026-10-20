@@ -870,6 +870,7 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
                       try {
                         const result = await api.mergeGithubPR(task.id);
                         setGithubPrState(result.pr.state);
+                        void api.boardUpdateEligibility(task.id).then(setBoardUpdate).catch(() => setBoardUpdate(null));
                       } catch (error) { setPrError((error as Error).message); }
                       finally { setGithubMergeBusy(false); }
                     }} className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50">
