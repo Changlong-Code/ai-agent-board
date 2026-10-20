@@ -15,7 +15,7 @@ export function createGitRouter(repo: TaskRepository, agentManager: AgentManager
     if (!task.repoPath) { res.json({ hasRemote: false }); return; }
 
     try {
-      const remote = execFileSync('git', ['remote', 'get-url', 'origin'], {
+      const remote = execFileSync('git', ['remote', 'get-url', 'source'], {
         cwd: task.repoPath, stdio: 'pipe',
       }).toString().trim();
       res.json({ hasRemote: !!remote });
