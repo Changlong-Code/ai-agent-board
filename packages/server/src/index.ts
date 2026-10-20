@@ -1,3 +1,4 @@
+import { getDevelopmentSettings, setDefaultDevelopmentMode, isDevelopmentMode } from './services/development-policy.js';
 import 'dotenv/config';
 import { isAgentExecutionEnabled } from './services/execution-policy.js';
 import express from 'express';
@@ -131,6 +132,17 @@ const agentManager = new AgentManager();
   app.use('/api/templates', createTemplateRouter(templateRepo));
   app.use('/api/groups', createGroupsRouter(groupRepo, taskRepo, agentManager, projectRepo));
   app.use('/api', createAttachmentsRouter(taskRepo, attachmentStore));
+
+  app.get('/api/development-settings', (_req, res) => res.json(getDevelopmentSettings()));
+  app.patch('/api/development-settings', (req, res) => {
+    if (!isDevelopmentMode(req.body.defaultMode)) {
+      res.status(400).json({ error: 'Invalid defaultMode' }); return;
+    }
+    if (req.body.upgradeRequiresApproval === false) {
+      res.status(400).json({ error: 'Upgrade approval cannot be disabled' }); return;
+    }
+    res.json(setDefaultDevelopmentMode(req.body.defaultMode));
+  });
 
   // GET /api/agents — list available agents
   app.get('/api/agents', (_req, res) => { res.json(agentManager.getAvailableAgents()); });
