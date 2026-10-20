@@ -434,6 +434,8 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
   const [prUrl, setPrUrl] = useState<string | null>(null);
   const [githubPrState, setGithubPrState] = useState<string | null>(null);
   const [githubMergeBusy, setGithubMergeBusy] = useState(false);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
   const [prLoading, setPrLoading] = useState(false);
   const [prError, setPrError] = useState<string | null>(null);
   const [mergeResult, setMergeResult] = useState<string | null>(null);
@@ -471,6 +473,7 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
     setPrLoading(false);
     setPrError(null);
     setMergeResult(null);
+    setSyncResult(null);
     setMergeLoading(false);
     setMergeError(null);
     setShowWorktreeConfirm(false);
