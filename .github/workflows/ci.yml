@@ -51,3 +51,30 @@ jobs:
           name: playwright-report-${{ matrix.node-version }}
           path: packages/e2e/test-results/
           retention-days: 7
+
+  windows-updater-safety:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build shared, client and server
+        run: |
+          npm run build:shared
+          npm run build:client
+          npm run build:server
+
+      - name: Test Windows updater, rollback and fault isolation
+        run: node --test windows/update-state.test.cjs windows/rollback-guard.test.cjs windows/rollback-fault-test.test.cjs
+
+      - name: Test Board PR update authorization
+        run: node --import tsx/esm --test packages/server/tests/board-update-authorization.test.ts
