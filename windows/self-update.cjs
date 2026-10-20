@@ -5,7 +5,6 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { spawn, spawnSync } = require('node:child_process');
-const { createRequire } = require('node:module');
 
 const ROOT = path.resolve(__dirname, '..');
 const HOME = path.resolve(process.env.AGENTBOARD_HOME || process.env.ORIGINAL_BOARD_HOME ||
@@ -89,10 +88,17 @@ async function snapshotDatabase(id) {
   const original = path.join(HOME, 'data', 'agentboard.db');
   if (!fs.existsSync(original)) return null;
   const backup = path.join(UPDATES, 'db-before-' + id + '.db');
-  const Database = createRequire(path.join(ROOT, 'packages/server/package.json'))('better-sqlite3');
-  const db = new Database(original, { readonly: true, fileMustExist: true });
-  try { await db.backup(backup); }
-  finally { db.close(); }
+  // IMPORTANT: never load better-sqlite3 in the updater process. On Windows its
+  // native .node binary remains mapped until process exit and npm ci cannot unlink it.
+  // A short-lived Node child makes a consistent SQLite backup then exits.
+  const script = [
+    "const { createRequire } = require('node:module');",
+    "const Database = createRequire(process.argv[1])('better-sqlite3');",
+    "const db = new Database(process.argv[2], { readonly: true, fileMustExist: true });",
+    "db.backup(process.argv[3]).then(() => db.close()).catch(e => { db.close(); console.error(e); process.exitCode = 1; });"
+  ].join('\n');
+  run(process.execPath, ['-e', script, path.join(ROOT, 'packages/server/package.json'), original, backup], ROOT, 60000);
+  if (!fs.existsSync(backup)) throw new Error('Database backup was not created.');
   return backup;
 }
 function restoreDatabase(snapshot) {
@@ -103,8 +109,8 @@ function restoreDatabase(snapshot) {
     try { fs.unlinkSync(file + suffix); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   }
 }
-function builds(cwd) {
-  run('npm', ['ci'], cwd, 600000);
+function builds(cwd, installDependencies = true) {
+  if (installDependencies) run('npm', ['ci'], cwd, 600000);
   for (const target of ['build:shared', 'build:client', 'build:server']) {
     run('npm', ['run', target], cwd, 360000);
   }
@@ -156,6 +162,15 @@ async function install() {
     const target = git('rev-parse', 'FETCH_HEAD');
     if (git('merge-base', prior, target) !== prior) throw new Error('Branch diverged: fast-forward unavailable.');
     if (prior === target) { status('up-to-date', { to: target }); return; }
+    // An in-place npm ci is unsafe on Windows: another process may still have
+    // better_sqlite3.node mapped. Refuse dependency-changing upgrades until
+    // the side-by-side release mechanism is installed.
+    const dependencyPaths = ['package.json', 'package-lock.json', 'packages/client/package.json',
+      'packages/server/package.json', 'packages/e2e/package.json', 'shared/package.json'];
+    const changedDependencies = git('diff', '--name-only', prior, target, '--', ...dependencyPaths);
+    if (changedDependencies) throw new Error(
+      'Update changes npm dependencies (' + changedDependencies.replace(/\r?\n/g, ', ') +
+      '). In-place dependency replacement is disabled for safety; use a side-by-side release.');
     status('preparing', { to: target });
     staging = path.join(UPDATES, 'stage-' + id);
     git('worktree', 'add', '--detach', staging, target);
@@ -187,7 +202,9 @@ async function install() {
     status('installing', { dbBackup: snapshot });
     git('merge', '--ff-only', target);
     switched = true;
-    builds(ROOT);
+    // Preflight has already built the target in its own worktree. Compile in
+    // the main checkout using existing dependencies; never run npm ci here.
+    builds(ROOT, false);
     status('restarting');
     await launchAndCheck();
     status('complete');
@@ -198,7 +215,8 @@ async function install() {
         status('rolling-back', { error: String(err) });
         // The repo was verified clean and the only tracked changes were applied by this updater.
         git('reset', '--hard', prior);
-        builds(ROOT);
+        // Roll back the application without uninstalling native dependencies.
+        builds(ROOT, false);
         restoreDatabase(snapshot);
         await launchAndCheck();
         status('rolled-back', { error: String(err) });
