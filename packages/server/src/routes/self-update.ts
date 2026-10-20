@@ -21,6 +21,38 @@ function readState(): unknown {
   try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); }
   catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { phase: 'idle' }; throw err; }
 }
+
+/**
+ * Keep all Board updater launching in one place: Settings and task PR actions
+ * must obey exactly the same safety checks.
+ */
+export function boardUpdateReadiness(): { branch: string; remote: string; root: string; current: string } {
+  if (process.env.AGENTBOARD_WINDOWS_BASIC !== '1' || process.platform !== 'win32') {
+    throw new Error('Local Windows Board only');
+  }
+  if (fs.existsSync(LOCK)) throw new Error('Updater already running');
+  if (git('status', '--porcelain')) throw new Error('Uncommitted Board code changes; save them first');
+  const branch = git('branch', '--show-current');
+  const remote = githubRemote();
+  if (!['main', 'windows-m1'].includes(branch) || !remote) {
+    throw new Error('Board is not on a supported GitHub branch');
+  }
+  const script = path.join(ROOT, 'windows', 'self-update.cjs');
+  if (!fs.existsSync(script)) throw new Error('Board updater not installed');
+  return { branch, remote, root: ROOT, current: git('rev-parse', 'HEAD') };
+}
+
+export function launchBoardUpdate(): { accepted: true; message: string } {
+  boardUpdateReadiness();
+  const script = path.join(ROOT, 'windows', 'self-update.cjs');
+  const job = spawn(process.execPath, [script, '--install'], {
+    cwd: ROOT, env: { ...process.env, ORIGINAL_BOARD_HOME: HOME },
+    detached: true, stdio: 'ignore', windowsHide: true,
+  });
+  job.unref();
+  return { accepted: true, message: 'Update preparation started. Board remains available until build finishes.' };
+}
+
 export function createSelfUpdateRouter(): Router {
   const router = Router();
   router.get('/status', (_req, res) => {
@@ -37,24 +69,8 @@ export function createSelfUpdateRouter(): Router {
     }
   });
   router.post('/install', (_req, res) => {
-    if (process.env.AGENTBOARD_WINDOWS_BASIC !== '1' || process.platform !== 'win32') {
-      res.status(403).json({ error: 'Local Windows Board only' }); return;
-    }
-    try {
-      if (fs.existsSync(LOCK)) { res.status(409).json({ error: 'Updater already running' }); return; }
-      if (git('status', '--porcelain')) { res.status(409).json({ error: 'Uncommitted code changes; save them first' }); return; }
-      if (!['main', 'windows-m1'].includes(git('branch', '--show-current')) || !githubRemote()) {
-        res.status(409).json({ error: 'No supported GitHub branch and remote' }); return;
-      }
-      const script = path.join(ROOT, 'windows', 'self-update.cjs');
-      if (!fs.existsSync(script)) { res.status(404).json({ error: 'Updater not installed' }); return; }
-      const job = spawn(process.execPath, [script, '--install'], {
-        cwd: ROOT, env: { ...process.env, ORIGINAL_BOARD_HOME: HOME },
-        detached: true, stdio: 'ignore', windowsHide: true,
-      });
-      job.unref();
-      res.status(202).json({ accepted: true, message: 'Update preparation started. The current Board remains running until the new build is ready.' });
-    } catch (e) { res.status(500).json({ error: e instanceof Error ? e.message : String(e) }); }
+    try { res.status(202).json(launchBoardUpdate()); }
+    catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : String(error) }); }
   });
   return router;
 }
