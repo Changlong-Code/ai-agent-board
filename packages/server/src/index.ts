@@ -1,3 +1,4 @@
+import { createSelfUpdateRouter } from './routes/self-update.js';
 import { getDevelopmentSettings, setDefaultDevelopmentMode, isDevelopmentMode } from './services/development-policy.js';
 import 'dotenv/config';
 import { isAgentExecutionEnabled } from './services/execution-policy.js';
@@ -126,6 +127,7 @@ const agentManager = new AgentManager();
 
   app.use('/api/projects', createProjectsRouter(projectRepo, taskRepo, groupRepo, agentManager));
   app.use('/api/orchestrations', createOrchestrationsRouter(taskRepo, projectRepo, agentManager));
+  app.use('/api/self-update', createSelfUpdateRouter());
   app.use('/api/tasks', createTaskRouter(taskRepo, agentManager, projectRepo));
   app.use('/api/tasks', createAgentRouter(taskRepo, agentManager, groupRepo, projectRepo));
   app.use('/api/tasks', createGitRouter(taskRepo, agentManager));
