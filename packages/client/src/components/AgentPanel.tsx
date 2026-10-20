@@ -489,7 +489,11 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
     api.getGithubPR(taskId).then(({ pr }) => {
       setPrUrl(pr?.url || null);
       setGithubPrState(pr?.state || null);
-    }).catch(() => { setPrUrl(null); setGithubPrState(null); });
+    }).catch((error) => {
+      setPrUrl(null);
+      setGithubPrState('LOOKUP_ERROR');
+      setPrError('Could not load GitHub PR: ' + (error instanceof Error ? error.message : String(error)));
+    });
 
     // Listen for live agent events via WS
     const disconnect = connectWS((msg) => {
@@ -821,7 +825,7 @@ export function AgentPanel({ task, onClose, onRun, onStop, onCreatePR, onMergeLo
               {/* PR / Cleanup actions — show when task is done or complete */}
               {(task.agentStatus === 'complete' || task.columnId === 'review' || task.columnId === 'done') && (
                 <div className="flex items-center gap-2 overflow-x-auto pb-0.5 pt-1">
-                  {!prUrl && onCreatePR && hasRemote === true && (
+                  {!prUrl && githubPrState !== 'LOOKUP_ERROR' && onCreatePR && hasRemote === true && (
                     <button
                       onClick={async () => {
                         setPrLoading(true);
