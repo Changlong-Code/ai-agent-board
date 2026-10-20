@@ -159,13 +159,13 @@ async function install() {
   catch { throw new Error('Another updater is already running. Check ' + LOCK); }
   fs.closeSync(handle);
   const id = Date.now().toString();
-  let staging = null, switched = false, snapshot = null, prior = null;
+  let staging = null, switched = false, snapshot = null, prior = null, target = null;
   try {
     const state = cleanProject();
     prior = state.old;
     status('checking', { id, branch: state.branch, from: prior, remote: state.remote });
     git('fetch', state.remote, state.branch);
-    const target = git('rev-parse', 'FETCH_HEAD');
+    target = git('rev-parse', 'FETCH_HEAD');
     if (git('merge-base', prior, target) !== prior) throw new Error('Branch diverged: fast-forward unavailable.');
     if (prior === target) { status('up-to-date', { to: target }); return; }
     // An in-place npm ci is unsafe on Windows: another process may still have
