@@ -160,7 +160,7 @@ async function install() {
   catch { throw new Error('Another updater is already running. Check ' + LOCK); }
   fs.closeSync(handle);
   const id = Date.now().toString();
-  let staging = null, switched = false, snapshot = null, prior = null, target = null;
+  let staging = null, switched = false, healthy = false, snapshot = null, prior = null, target = null;
   try {
     const state = cleanProject();
     prior = state.old;
@@ -216,10 +216,16 @@ async function install() {
     builds(ROOT, false);
     status('restarting');
     await launchAndCheck();
+    healthy = true;
     status('complete');
   } catch (err) {
     log('INSTALL FAILURE: ' + String(err));
-    if (switched && prior) {
+    if (healthy) {
+      // Running new Board passed health checks. A failure to record completion
+      // must not overwrite its code or database while the service is live.
+      try { status('complete', { statusWarning: String(err) }); }
+      catch (stateError) { log('STATUS FAILURE AFTER HEALTHY START: ' + String(stateError)); }
+    } else if (switched && prior) {
       try {
         status('rolling-back', { error: String(err) });
         // Only reset the updater's own target; never discard unrelated edits.
