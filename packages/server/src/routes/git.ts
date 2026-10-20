@@ -1,4 +1,6 @@
-import { getGithubPr, mergeGithubPr } from '../services/github-pr.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { getGithubPr, mergeGithubPr, syncMergedGithubPr } from '../services/github-pr.js';
 import { Router, Request, Response } from 'express';
 import { execFileSync } from 'child_process';
 import type { TaskRepository } from '../repositories/types.js';
@@ -68,6 +70,22 @@ export function createGitRouter(repo: TaskRepository, agentManager: AgentManager
     try {
       const pr = mergeGithubPr(task.repoPath, task.branchName, task.baseBranch || 'main', req.body?.confirmed === true);
       res.json({ pr });
+    } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : String(error) }); }
+  }));
+
+  router.post('/:id/sync-merged-pr', asyncHandler(async (req: Request, res: Response) => {
+    const task = await repo.getById(paramId(req));
+    if (!task) { res.status(404).json({ error: 'task not found' }); return; }
+    if (!task.repoPath || !task.branchName) { res.status(400).json({ error: 'task has no repository or branch' }); return; }
+    if (agentManager.isRunning(task.id)) { res.status(409).json({ error: 'Stop the agent before synchronizing.' }); return; }
+    const boardRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../');
+    const localPath = path.resolve(task.repoPath);
+    if (process.platform === 'win32' ? boardRoot.toLowerCase() === localPath.toLowerCase() : boardRoot === localPath) {
+      res.status(409).json({ error: 'Cannot synchronize the running Board repository. Use Self Update for Board itself.' }); return;
+    }
+    try {
+      const result = syncMergedGithubPr(task.repoPath, task.branchName, task.baseBranch || 'main', req.body?.confirmed === true);
+      res.json(result);
     } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : String(error) }); }
   }));
 
