@@ -1,0 +1,11 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { rollbackDecision } = require('./rollback-guard.cjs');
+const base = { switched: true, prior: 'old', target: 'new', head: 'new', dirty: false };
+test('roll back only updater-owned target', () => assert.equal(rollbackDecision(base), 'restore-prior'));
+test('no code switch means no reset', () => assert.equal(rollbackDecision({ ...base, switched: false }), 'skip'));
+test('already rolled back is safe', () => assert.equal(rollbackDecision({ ...base, head: 'old' }), 'already-restored'));
+test('refuse rollback if user edited working tree', () => assert.equal(rollbackDecision({ ...base, dirty: true }), 'manual-recovery-required'));
+test('refuse rollback if other process moved HEAD', () => assert.equal(rollbackDecision({ ...base, head: 'other' }), 'manual-recovery-required'));
+test('refuse rollback with missing refs', () => assert.equal(rollbackDecision({ ...base, target: null }), 'manual-recovery-required'));
