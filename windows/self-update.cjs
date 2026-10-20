@@ -14,6 +14,7 @@ const UPDATES = path.join(HOME, 'updates');
 const STATE = path.join(UPDATES, 'state.json');
 const LOCK = path.join(UPDATES, 'installer.lock');
 const STOP = path.join(HOME, 'update-stop-request.json');
+const ACK = path.join(HOME, 'update-stop-ack.json');
 const LOG = path.join(UPDATES, 'install.log');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const stamp = () => new Date().toISOString();
@@ -160,13 +161,25 @@ async function install() {
     git('worktree', 'add', '--detach', staging, target);
     builds(staging);
     status('awaiting-stop');
+    if (fs.existsSync(STOP) || fs.existsSync(ACK)) throw new Error('Old update stop marker exists; check and recover it before retrying.');
     fs.writeFileSync(STOP, JSON.stringify({ id, root: ROOT, phase: 'prepared', requestedAt: Date.now() }), { flag: 'wx' });
-    await waitForUnlocked(90000);
+    const ackDeadline = Date.now() + 15000;
+    while (Date.now() < ackDeadline) {
+      if (fs.existsSync(ACK)) {
+        const ack = JSON.parse(fs.readFileSync(ACK, 'utf8'));
+        if (ack.id === id) break;
+      }
+      await sleep(500);
+    }
+    if (!fs.existsSync(ACK) || JSON.parse(fs.readFileSync(ACK, 'utf8')).id !== id)
+      throw new Error('Board launcher did not acknowledge the stop request within 15 seconds. No code changes applied.');
+    await waitForUnlocked(30000);
     // Remove the stop request before relaunching. Otherwise the new launcher
     // reads the stale request and shuts itself down immediately.
     const stopRequest = JSON.parse(fs.readFileSync(STOP, 'utf8'));
     if (stopRequest.id !== id || stopRequest.root !== ROOT) throw new Error('Stop request ownership changed.');
     fs.unlinkSync(STOP);
+    if (fs.existsSync(ACK)) fs.unlinkSync(ACK);
     // Verify the repository has not been changed by an unrelated process.
     const fresh = cleanProject();
     if (fresh.old !== prior || fresh.branch !== state.branch) throw new Error('Repository changed while preparing update.');
@@ -200,6 +213,7 @@ async function install() {
   } finally {
     try { if (staging) git('worktree', 'remove', '--force', staging); } catch (e) { log('stage cleanup failed: ' + String(e)); }
     try { if (fs.existsSync(STOP) && JSON.parse(fs.readFileSync(STOP, 'utf8')).id === id) fs.unlinkSync(STOP); } catch (e) { log('stop request cleanup failed: ' + String(e)); }
+    try { if (fs.existsSync(ACK) && JSON.parse(fs.readFileSync(ACK, 'utf8')).id === id) fs.unlinkSync(ACK); } catch {}
     try { fs.unlinkSync(LOCK); } catch {}
   }
 }
