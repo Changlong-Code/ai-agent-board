@@ -98,6 +98,7 @@ export function createGitRouter(repo: TaskRepository, agentManager: AgentManager
     if (agentManager.isRunning(task.id)) throw new Error('Agent is still running');
     const ready = boardUpdateReadiness();
     const pr = getGithubPr(task.repoPath, task.branchName, task.baseBranch || 'main');
+    if (!pr) throw new Error('Task PR not found on GitHub');
     assertBoardUpdateAuthorization({
       taskBranch: task.branchName, taskBase: task.baseBranch || 'main',
       boardBranch: ready.branch, boardRepository: findGithubRemote(ready.root).repository,
